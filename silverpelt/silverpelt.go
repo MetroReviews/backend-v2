@@ -1,12 +1,12 @@
+// Package silverpelt propagates review actions (claim/unclaim/approve/deny)
+// from Metro Reviews out to every enrolled bot list's webhook.
 package silverpelt
 
 import (
 	"context"
 	"fmt"
-	"net/http"
-	"strings"
-	"time"
 
+	"github.com/MetroReviews/backend-v2/helpers"
 	"github.com/MetroReviews/backend-v2/state"
 	"github.com/MetroReviews/backend-v2/types"
 	"github.com/google/uuid"
@@ -23,143 +23,14 @@ type Request struct {
 	Lists    []string
 }
 
-type actionDef struct {
-	AllowedStates []types.State
-	Error         string
-	NewState      types.State
-	ListColumn    string
-}
-
-type HTTPResponse struct {
-	Status   int            `json:"status"`
-	Msg      string         `json:"msg,omitempty"`
-	Data     string         `json:"data,omitempty"`
-	Exc      string         `json:"exc,omitempty"`
-	SentData map[string]any `json:"sent_data"`
-}
-
 type Response struct {
 	Message string                  `json:"message,omitempty"`
 	Lists   map[string]HTTPResponse `json:"lists,omitempty"`
 }
 
-func (r *Response) ToMsg() string {
-	var b strings.Builder
-	if r.Message != "" {
-		b.WriteString("**Request Failed**\n")
-		b.WriteString(r.Message)
-	}
-	if r.Lists != nil {
-		var parts []string
-		for name, resp := range r.Lists {
-			msg := resp.Msg
-			if msg == "" {
-				msg = "No error: "
-			}
-			data := resp.Data
-			if data == "" {
-				data = "No data"
-			} else if len(data) > 50 {
-				data = data[:50]
-			}
-			parts = append(parts, fmt.Sprintf("%s: %s %s", name, msg, data))
-		}
-		b.WriteString("\n" + strings.Join(parts, "\n"))
-	}
-	out := b.String()
-	if len(out) > 1900 {
-		out = out[:1900]
-	}
-	return out + "...<some lines omitted>"
-}
-
 func (r *Response) ToHTML() string {
 	b, _ := jsonimpl.Marshal(r)
 	return string(b)
-}
-
-var actions = map[types.Action]actionDef{
-	types.ActionClaim: {
-		AllowedStates: []types.State{types.StatePending},
-		Error:         "This bot cannot be claimed as it is not pending review? Maybe someone is testing it right now?",
-		NewState:      types.StateUnderReview,
-		ListColumn:    "claim_bot_api",
-	},
-	types.ActionUnclaim: {
-		AllowedStates: []types.State{types.StateUnderReview},
-		Error:         "This bot cannot be unclaimed as it is not under review?",
-		NewState:      types.StatePending,
-		ListColumn:    "unclaim_bot_api",
-	},
-	types.ActionApprove: {
-		AllowedStates: []types.State{types.StateUnderReview},
-		Error:         "This bot cannot be approved as it is not under review?",
-		NewState:      types.StateApproved,
-		ListColumn:    "approve_bot_api",
-	},
-	types.ActionDeny: {
-		AllowedStates: []types.State{types.StateUnderReview},
-		Error:         "This bot cannot be denied as it is not under review?",
-		NewState:      types.StateDenied,
-		ListColumn:    "deny_bot_api",
-	},
-}
-
-func stateAllowed(allowed []types.State, s types.State) bool {
-	for _, a := range allowed {
-		if a == s {
-			return true
-		}
-	}
-	return false
-}
-
-var httpClient = &http.Client{Timeout: 30 * time.Second}
-
-func makeRequest(ctx context.Context, url, key string, payload map[string]any) HTTPResponse {
-	if url == "" || !strings.HasPrefix(url, "https://") {
-		return HTTPResponse{Status: 400, Msg: "No url provided", SentData: payload}
-	}
-
-	state.Logger.Info("[silverpelt] dispatching webhook", zap.String("url", url))
-
-	body, err := jsonimpl.Marshal(payload)
-	if err != nil {
-		return HTTPResponse{Status: 400, Msg: "Failed to encode payload", Exc: err.Error(), SentData: payload}
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(body)))
-	if err != nil {
-		return HTTPResponse{Status: 400, Msg: "Failed to build request", Exc: err.Error(), SentData: payload}
-	}
-	req.Header.Set("Authorization", key)
-	req.Header.Set("User-Agent", "Frostpaw/0.2 (Silverpelt)")
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return HTTPResponse{Status: 400, Msg: "Request failed", Exc: err.Error(), SentData: payload}
-	}
-	defer resp.Body.Close()
-
-	var sb strings.Builder
-	buf := make([]byte, 4096)
-	for {
-		n, rerr := resp.Body.Read(buf)
-		if n > 0 {
-			sb.Write(buf[:n])
-		}
-		if rerr != nil {
-			break
-		}
-	}
-
-	return HTTPResponse{
-		Status:   resp.StatusCode,
-		Msg:      "Success",
-		Data:     sb.String(),
-		SentData: payload,
-	}
 }
 
 type listRow struct {
@@ -171,6 +42,8 @@ type listRow struct {
 	SecretKey string
 }
 
+// Handle applies a review action to a bot and dispatches it to every
+// enrolled, eligible list's webhook, returning a per-list status summary.
 func Handle(ctx context.Context, data Request) *Response {
 	if len(data.Reason) < 5 {
 		return &Response{Message: "Reason must be at least 5 characters"}
@@ -217,7 +90,8 @@ func Handle(ctx context.Context, data Request) *Response {
 	)
 	rows, err := state.Pool.Query(ctx, query)
 	if err != nil {
-		return &Response{Message: "Failed to load lists: " + err.Error()}
+		state.Logger.Error("[silverpelt] failed to load lists", zap.Error(err))
+		return &Response{Message: "Failed to load lists."}
 	}
 	defer rows.Close()
 
@@ -245,7 +119,7 @@ func Handle(ctx context.Context, data Request) *Response {
 			continue
 		}
 
-		if len(data.Lists) > 0 && !contains(data.Lists, l.ID.String()) {
+		if len(data.Lists) > 0 && !helpers.Contains(data.Lists, l.ID.String()) {
 			continue
 		}
 
@@ -270,13 +144,4 @@ func Handle(ctx context.Context, data Request) *Response {
 	}
 
 	return &Response{Lists: listResp}
-}
-
-func contains(s []string, v string) bool {
-	for _, x := range s {
-		if x == v {
-			return true
-		}
-	}
-	return false
 }

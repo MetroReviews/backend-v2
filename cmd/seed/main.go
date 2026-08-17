@@ -18,6 +18,7 @@ import (
 	"os"
 
 	"github.com/MetroReviews/backend-v2/config"
+	"github.com/MetroReviews/backend-v2/migrations"
 	"github.com/google/uuid"
 	"github.com/infinitybotlist/eureka/crypto"
 	"github.com/jackc/pgx/v5"
@@ -68,6 +69,10 @@ func main() {
 
 	if err := pool.Ping(ctx); err != nil {
 		log.Fatalf("failed to ping database: %v", err)
+	}
+
+	if err := migrations.Apply(ctx, pool); err != nil {
+		log.Fatalf("failed to apply migrations: %v", err)
 	}
 
 	tx, err := pool.Begin(ctx)

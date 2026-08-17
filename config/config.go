@@ -8,6 +8,7 @@ type Config struct {
 	GID          string  `yaml:"gid" default:"" comment:"Main guild ID"`
 	Reviewer     string  `yaml:"reviewer" default:"" comment:"Reviewer role ID"`
 	QueueChannel string  `yaml:"queue_channel" default:"" comment:"Channel where new bots are announced"`
+	LogsChannel  string  `yaml:"logs_channel" default:"" comment:"Channel where claim/unclaim/approve/deny actions are logged" required:"false"`
 	ListOwner    string  `yaml:"list_owner" default:"" comment:"List Owner role ID"`
 	Sudo         string  `yaml:"sudo" default:"" comment:"Sudo role ID"`
 	TestPingRole string  `yaml:"test_ping_role" default:"" comment:"Optional role pinged instead of reviewer" required:"false"`
@@ -31,6 +32,8 @@ func (c *Config) GuildID() uint64 { return parseID(c.GID) }
 func (c *Config) ReviewerRole() uint64 { return parseID(c.Reviewer) }
 
 func (c *Config) QueueChannelID() uint64 { return parseID(c.QueueChannel) }
+
+func (c *Config) LogsChannelID() uint64 { return parseID(c.LogsChannel) }
 
 func (c *Config) ListOwnerRole() uint64 { return parseID(c.ListOwner) }
 

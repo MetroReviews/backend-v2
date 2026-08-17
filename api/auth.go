@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/MetroReviews/backend-v2/helpers"
 	"github.com/MetroReviews/backend-v2/state"
 	"github.com/MetroReviews/backend-v2/types"
 	"github.com/google/uuid"
@@ -21,30 +22,22 @@ func AuthList(ctx context.Context, listID uuid.UUID, key string) *uapi.HttpRespo
 	).Scan(&secretKey, &listState)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return &uapi.HttpResponse{
-			Status: http.StatusNotFound,
-			Json:   types.ApiError{Message: "List not found", Error: true},
-		}
+		resp := helpers.ErrorResponse(http.StatusNotFound, "List not found")
+		return &resp
 	}
 	if err != nil {
-		return &uapi.HttpResponse{
-			Status: http.StatusInternalServerError,
-			Json:   types.ApiError{Message: "Failed to look up list: " + err.Error(), Error: true},
-		}
+		resp := helpers.ErrorResponse(http.StatusInternalServerError, "Failed to look up list: "+err.Error())
+		return &resp
 	}
 
 	if key != secretKey {
-		return &uapi.HttpResponse{
-			Status: http.StatusUnauthorized,
-			Json:   types.ApiError{Message: "Invalid secret key", Error: true},
-		}
+		resp := helpers.ErrorResponse(http.StatusUnauthorized, "Invalid secret key")
+		return &resp
 	}
 
 	if !types.IsGoodListState(listState) {
-		return &uapi.HttpResponse{
-			Status: http.StatusUnauthorized,
-			Json:   types.ApiError{Message: "List blacklisted, defunct or in an unknown state", Error: true},
-		}
+		resp := helpers.ErrorResponse(http.StatusUnauthorized, "List blacklisted, defunct or in an unknown state")
+		return &resp
 	}
 
 	return nil

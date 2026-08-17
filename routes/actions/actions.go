@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/MetroReviews/backend-v2/helpers"
 	"github.com/MetroReviews/backend-v2/state"
 	"github.com/MetroReviews/backend-v2/types"
 	"github.com/go-chi/chi/v5"
@@ -70,12 +71,12 @@ func getActions(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 		"SELECT id, bot_id, action, reason, reviewer, action_time, list_source FROM bot_action ORDER BY action_time DESC LIMIT $1 OFFSET $2",
 		limit, offset)
 	if err != nil {
-		return uapi.HttpResponse{Status: http.StatusInternalServerError, Json: types.ApiError{Message: err.Error(), Error: true}}
+		return helpers.InternalError(err)
 	}
 
 	list, err := pgx.CollectRows(rows, pgx.RowToStructByName[types.ActionRow])
 	if err != nil {
-		return uapi.HttpResponse{Status: http.StatusInternalServerError, Json: types.ApiError{Message: err.Error(), Error: true}}
+		return helpers.InternalError(err)
 	}
 
 	return uapi.HttpResponse{Json: list}

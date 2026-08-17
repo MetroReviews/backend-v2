@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/MetroReviews/backend-v2/config"
+	"github.com/MetroReviews/backend-v2/migrations"
 	"github.com/bwmarrin/discordgo"
 	"github.com/go-playground/validator/v10"
 	"github.com/infinitybotlist/eureka/genconfig"
@@ -53,6 +54,10 @@ func Setup() error {
 		return err
 	}
 	Pool = pool
+
+	if err := migrations.Apply(Context, Pool); err != nil {
+		return err
+	}
 
 	return nil
 }
