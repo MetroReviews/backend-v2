@@ -3,5 +3,3 @@ secrets.json
 /metro-backend
 *.log
 config.yaml
-go.mod
-go.sum
