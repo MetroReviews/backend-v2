@@ -1,91 +1,72 @@
+// This file (plus detail_bot.go and detail_business.go) renders the
+// full-detail view shown by the queue's "select an item" menu — this file
+// is the dispatch + shared helpers, detail_bot.go/detail_business.go each
+// render one subject type.
 package commands
 
 import (
 	"fmt"
 	"strconv"
-	"strings"
-	"time"
 
-	"github.com/MetroReviews/backend-v2/helpers"
-	"github.com/MetroReviews/backend-v2/state"
 	"github.com/MetroReviews/backend-v2/types"
 	"github.com/bwmarrin/discordgo"
+	"github.com/google/uuid"
 )
 
-// buildBotDetailEmbed renders the full-detail view shown by the "View bot
-// details" select menu — everything the compact list rows don't have room for.
-func buildBotDetailEmbed(botID int64) (*discordgo.MessageEmbed, types.State, error) {
-	var (
-		username, description, longDescription    string
-		website, invite, support, library, prefix *string
-		reviewNote                                *string
-		owner                                     int64
-		reviewer                                  *int64
-		tags                                      []string
-		nsfw                                      bool
-		st                                        types.State
-		addedAt                                   time.Time
-	)
+// buildDetailEmbed dispatches to the bot, business or project detail view
+// depending on which one was picked from the queue's "select an item" menu.
+func buildDetailEmbed(subjectType, id string) (*discordgo.MessageEmbed, types.State, error) {
+	switch subjectType {
+	case "bot":
+		botID, err := strconv.ParseInt(id, 10, 64)
+		if err != nil {
+			return nil, 0, err
+		}
+		return buildBotDetailEmbed(botID)
+	case "business":
+		businessID, err := uuid.Parse(id)
+		if err != nil {
+			return nil, 0, err
+		}
+		return buildBusinessDetailEmbed(businessID)
+	case "project":
+		projectID, err := uuid.Parse(id)
+		if err != nil {
+			return nil, 0, err
+		}
+		return buildProjectDetailEmbed(projectID)
+	default:
+		return nil, 0, fmt.Errorf("unknown subject type %q", subjectType)
+	}
+}
 
-	err := state.Pool.QueryRow(state.Context, `
-		SELECT username, description, long_description, website, invite,
-		       support, library, prefix, review_note, owner, reviewer,
-		       tags, nsfw, state, added_at
-		FROM bot_queue WHERE bot_id = $1`, botID).Scan(
-		&username, &description, &longDescription, &website, &invite,
-		&support, &library, &prefix, &reviewNote, &owner, &reviewer,
-		&tags, &nsfw, &st, &addedAt,
-	)
-	if err != nil {
-		return nil, 0, err
+// mentionOrName formats a Metro user for display in a Discord embed: a
+// proper @mention if they have a linked Discord account, else their
+// username, else a plain fallback. Every account today is Discord-linked,
+// but the schema no longer guarantees it.
+func mentionOrName(discordID *int64, username *string) string {
+	if discordID != nil {
+		return fmt.Sprintf("<@%d>", *discordID)
 	}
+	if username != nil && *username != "" {
+		return *username
+	}
+	return "Unknown"
+}
 
-	embed := &discordgo.MessageEmbed{
-		Title:       fmt.Sprintf("%s %s", stateEmoji[st], username),
-		Description: description,
-		Color:       0x5865f2,
-		Fields: []*discordgo.MessageEmbedField{
-			{Name: "Status", Value: stateNames[st], Inline: true},
-			{Name: "Bot ID", Value: strconv.FormatInt(botID, 10), Inline: true},
-			{Name: "Owner", Value: fmt.Sprintf("<@%d>", owner), Inline: true},
-		},
-		Footer: &discordgo.MessageEmbedFooter{Text: "Added " + addedAt.Format("2006-01-02 15:04 MST")},
+func derefOr(s *string, fallback string) string {
+	if s == nil || *s == "" {
+		return fallback
 	}
+	return *s
+}
 
-	if reviewer != nil {
-		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{Name: "Reviewer", Value: fmt.Sprintf("<@%d>", *reviewer), Inline: true})
+func nonEmpty(vals ...*string) []string {
+	out := make([]string, 0, len(vals))
+	for _, v := range vals {
+		if v != nil && *v != "" {
+			out = append(out, *v)
+		}
 	}
-	if prefix != nil && *prefix != "" {
-		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{Name: "Prefix", Value: *prefix, Inline: true})
-	}
-	if nsfw {
-		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{Name: "NSFW", Value: "Yes", Inline: true})
-	}
-	if len(tags) > 0 {
-		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{Name: "Tags", Value: strings.Join(tags, ", ")})
-	}
-
-	inviteVal := helpers.InviteURL(strconv.FormatInt(botID, 10))
-	if invite != nil && *invite != "" {
-		inviteVal = *invite
-	}
-	embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{Name: "Invite", Value: inviteVal})
-
-	if website != nil && *website != "" {
-		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{Name: "Website", Value: *website, Inline: true})
-	}
-	if support != nil && *support != "" {
-		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{Name: "Support", Value: *support, Inline: true})
-	}
-	if library != nil && *library != "" {
-		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{Name: "Library", Value: *library, Inline: true})
-	}
-	if reviewNote != nil && *reviewNote != "" {
-		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{Name: "Review Note", Value: helpers.Truncate(*reviewNote, 1024)})
-	}
-	if longDescription != "" && longDescription != description {
-		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{Name: "Long Description", Value: helpers.Truncate(longDescription, 1024)})
-	}
-
-	return embed, st, nil
+	return out
 }

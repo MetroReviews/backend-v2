@@ -9,11 +9,18 @@ import (
 	"time"
 
 	"github.com/MetroReviews/backend-v2/helpers"
+	"github.com/MetroReviews/backend-v2/identity"
+	"github.com/MetroReviews/backend-v2/roles"
 	"github.com/MetroReviews/backend-v2/state"
 	"github.com/infinitybotlist/eureka/crypto"
 	"github.com/infinitybotlist/eureka/jsonimpl"
 	"github.com/infinitybotlist/eureka/uapi"
 )
+
+// sessionTTL is how long a minted session_token stays valid for general API
+// use (POST review/business/claim, ...) — much longer than the 30-minute
+// nonce ticket, which only gates the one-time staff panel handshake.
+const sessionTTL = 30 * 24 * time.Hour
 
 func completeOAuth2(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 	code := r.URL.Query().Get("code")
@@ -23,8 +30,8 @@ func completeOAuth2(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 	form.Set("grant_type", "authorization_code")
 	form.Set("code", code)
 	form.Set("client_id", appID())
-	form.Set("redirect_uri", state.Config.OAuthRedirect)
-	form.Set("client_secret", state.Config.ClientSecret)
+	form.Set("redirect_uri", state.Config.Auth.OAuthRedirect)
+	form.Set("client_secret", state.Config.Discord.ClientSecret)
 
 	tokenResp, err := http.PostForm("https://discord.com/api/v10/oauth2/token", form)
 	if err != nil {
@@ -68,21 +75,55 @@ func completeOAuth2(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 	}
 
 	nonce := crypto.RandString(43) + "@" + strconv.FormatFloat(float64(time.Now().UnixNano())/1e9, 'f', -1, 64)
+	sessionToken := crypto.RandString(64)
 
-	userID, _ := strconv.ParseInt(user.ID, 10, 64)
+	discordID, _ := strconv.ParseInt(user.ID, 10, 64)
+
+	// find-or-create the Metro user this Discord account links to, then
+	// sync its profile fields and mint this login's session on the link.
+	metroUserID, err := identity.EnsureDiscordUser(d.Context, discordID, user.Username)
+	if err != nil {
+		return helpers.InternalError(err)
+	}
+
 	if _, err := state.Pool.Exec(d.Context,
-		"INSERT INTO users (user_id, nonce) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET nonce = EXCLUDED.nonce",
-		userID, nonce,
+		"UPDATE users SET username = $1, avatar = $2 WHERE id = $3",
+		user.Username, user.Avatar, metroUserID,
+	); err != nil {
+		return helpers.InternalError(err)
+	}
+
+	// Sync this login's Discord roles into the permissions system (see the
+	// roles package) — this is what sets/clears is_staff, so it must run
+	// before the ticket returned below is ever checked against it. A
+	// configured owner gets is_staff regardless of role membership, or even
+	// whether the bot's in the guild yet — SyncMember itself handles that.
+	var memberRoles []string
+	if state.Discord != nil {
+		gid := strconv.FormatUint(state.Config.GuildID(), 10)
+		if member, err := state.Discord.GuildMember(gid, user.ID); err == nil && member != nil {
+			memberRoles = member.Roles
+		}
+	}
+	if err := roles.SyncMember(d.Context, metroUserID, discordID, memberRoles); err != nil {
+		return helpers.InternalError(err)
+	}
+
+	if _, err := state.Pool.Exec(d.Context, `
+		UPDATE discord_accounts SET nonce = $1, session_token = $2, session_expires_at = NOW() + $3
+		WHERE discord_id = $4`,
+		nonce, sessionToken, sessionTTL, discordID,
 	); err != nil {
 		return helpers.InternalError(err)
 	}
 
 	ticketData := map[string]string{
-		"nonce":    nonce,
-		"user_id":  user.ID,
-		"username": user.Username,
-		"disc":     user.Discriminator,
-		"avatar":   user.Avatar,
+		"nonce":         nonce,
+		"user_id":       user.ID,
+		"username":      user.Username,
+		"disc":          user.Discriminator,
+		"avatar":        user.Avatar,
+		"session_token": sessionToken,
 	}
 	ticketBytes, _ := jsonimpl.Marshal(ticketData)
 	ticket := base64.URLEncoding.EncodeToString(ticketBytes)

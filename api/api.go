@@ -20,7 +20,7 @@ var Constants = &uapi.UAPIConstants{
 	ResourceNotFound:    `{"message":"Resource not found","error":true}`,
 	BadRequest:          `{"message":"Bad request","error":true}`,
 	Forbidden:           `{"message":"Forbidden","error":true}`,
-	Unauthorized:        `{"message":"Unauthorized. Provide a valid list secret key","error":true}`,
+	Unauthorized:        `{"message":"Unauthorized. Provide a valid session token","error":true}`,
 	InternalServerError: `{"message":"Internal server error","error":true}`,
 	MethodNotAllowed:    `{"message":"Method not allowed","error":true}`,
 	BodyRequired:        `{"message":"A request body is required","error":true}`,
@@ -30,32 +30,33 @@ func Setup() {
 	uapi.SetupState(uapi.UAPIState{
 		Logger:           state.Logger,
 		Authorize:        authorize,
-		AuthTypeMap:      map[string]string{"List": "List"},
+		AuthTypeMap:      map[string]string{"User": "User", "Staff": "Staff"},
 		DefaultResponder: defaultResponder{},
 		Constants:        Constants,
 		Context:          context.Background(),
 	})
 
 	docs.DocsSetupData = &docs.SetupData{
-		URL:         "https://" + state.Config.AllowedHost,
+		URL:         "https://" + state.Config.Auth.AllowedHost,
 		ErrorStruct: types.ApiError{},
 		Info: docs.Info{
 			Title:       "Metro Reviews API",
-			Description: "The API powering Metro Reviews: a central bot review service that propagates review actions across enrolled bot lists.",
-			Version:     "6.0",
+			Description: "The API powering Metro Reviews: reviews and ratings for any listed service or business, plus Metro's own Discord bot list.",
+			Version:     "7.0",
 			Contact: docs.Contact{
 				Name: "Purrquinox",
 				URL:  "https://purrquinox.com",
 			},
 			License: docs.License{
-				Name: "AGPL-3.0",
+				Name: "MIT",
 				URL:  "https://github.com/MetroReviews/backend-v2/blob/main/LICENSE",
 			},
 		},
 	}
 
 	docs.Setup()
-	docs.AddSecuritySchema("List", "Authorization", "A list's secret key. Sent in the Authorization header alongside the list_id.")
+	docs.AddSecuritySchema("User", "Authorization", "A user's session token, as `Bearer <token>`.")
+	docs.AddSecuritySchema("Staff", "Authorization", "A staff member's session token, as `Bearer <token>`.")
 }
 
 func authorize(r uapi.Route, req *http.Request) (uapi.AuthData, uapi.HttpResponse, bool) {

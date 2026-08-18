@@ -3,10 +3,14 @@ package bot
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/MetroReviews/backend-v2/helpers"
+	"github.com/MetroReviews/backend-v2/perms"
+	"github.com/MetroReviews/backend-v2/roles"
 	"github.com/MetroReviews/backend-v2/state"
 	"github.com/bwmarrin/discordgo"
+	"go.uber.org/zap"
 )
 
 const (
@@ -49,8 +53,27 @@ func AnnounceBotQueue(botID int64, username, ownerID, invite, reviewNote string)
 
 	channelID := strconv.FormatUint(state.Config.QueueChannelID(), 10)
 	_, err := state.Discord.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
-		Content: "<@&" + state.Config.PingRole() + ">",
+		Content: reviewerMentions(),
 		Embed:   embed,
 	})
 	return err
+}
+
+// reviewerMentions builds a space-separated "<@&id>" mention for every
+// Discord role currently linked to the queue.review permission (see the
+// roles/perms packages) — there's no single static "reviewer role" or
+// test-ping override in config anymore, so this pings whichever role(s)
+// are actually wired up to review the queue, or nobody if none are.
+func reviewerMentions() string {
+	roleIDs, err := roles.DiscordRoleIDsWithPermission(state.Context, perms.QueueReview)
+	if err != nil {
+		state.Logger.Error("[bot] failed to load reviewer role IDs for announcement", zap.Error(err))
+		return ""
+	}
+
+	mentions := make([]string, len(roleIDs))
+	for i, id := range roleIDs {
+		mentions[i] = fmt.Sprintf("<@&%d>", id)
+	}
+	return strings.Join(mentions, " ")
 }

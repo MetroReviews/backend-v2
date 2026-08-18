@@ -3,6 +3,9 @@ package commands
 import (
 	"strconv"
 
+	"github.com/MetroReviews/backend-v2/helpers"
+	"github.com/MetroReviews/backend-v2/perms"
+	"github.com/MetroReviews/backend-v2/roles"
 	"github.com/MetroReviews/backend-v2/state"
 	"github.com/bwmarrin/discordgo"
 	"go.uber.org/zap"
@@ -52,15 +55,55 @@ func interactionUserID(i *discordgo.InteractionCreate) int64 {
 	return id
 }
 
+// interactionUsername mirrors interactionUserID, for seeding a new Metro
+// user's display name the first time a Discord ID is resolved.
+func interactionUsername(i *discordgo.InteractionCreate) string {
+	if i.Member != nil && i.Member.User != nil {
+		return i.Member.User.Username
+	}
+	if i.User != nil {
+		return i.User.Username
+	}
+	return ""
+}
+
+// isReviewer reports whether the interacting member holds a Discord role
+// that grants the queue.review permission (see the perms/roles packages) —
+// Metro's Reviewer/Sudo roles by default, but driven by the DB now rather
+// than hardcoded against config.Reviewer.
 func isReviewer(i *discordgo.InteractionCreate) bool {
+	return hasDiscordPermission(i, perms.QueueReview)
+}
+
+// isRoleManager reports whether the interacting member may manage roles
+// and trigger a manual Discord role sync (/syncroles) — the roles.manage
+// permission, which only Metro's Sudo role grants by default.
+func isRoleManager(i *discordgo.InteractionCreate) bool {
+	return hasDiscordPermission(i, perms.RolesManage)
+}
+
+// hasDiscordPermission reports whether the interacting member is a
+// configured owner or currently holds a Discord role that grants want.
+func hasDiscordPermission(i *discordgo.InteractionCreate, want string) bool {
 	if state.Config.IsOwner(interactionUserID(i)) {
 		return true
 	}
 	if i.Member == nil {
 		return false
 	}
+
+	roleIDs, err := roles.DiscordRoleIDsWithPermission(state.Context, want)
+	if err != nil {
+		state.Logger.Error("[bot] failed to load role IDs for permission check", zap.Error(err), zap.String("permission", want))
+		return false
+	}
+
 	for _, roleID := range i.Member.Roles {
-		if roleID == state.Config.Reviewer {
+		rid, err := strconv.ParseInt(roleID, 10, 64)
+		if err != nil {
+			continue
+		}
+		if helpers.Contains(roleIDs, rid) {
 			return true
 		}
 	}

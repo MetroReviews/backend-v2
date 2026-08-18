@@ -1,5 +1,5 @@
 // Package helpers holds small, generic utilities shared by multiple
-// packages (routes, the bot, silverpelt, ...). Anything here should be
+// packages (routes, the bot, review, ...). Anything here should be
 // free of business logic — just string/slice/HTTP-response plumbing that
 // would otherwise get copy-pasted around.
 package helpers

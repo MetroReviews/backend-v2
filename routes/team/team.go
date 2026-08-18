@@ -5,6 +5,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/MetroReviews/backend-v2/helpers"
+	"github.com/MetroReviews/backend-v2/perms"
+	"github.com/MetroReviews/backend-v2/roles"
 	"github.com/MetroReviews/backend-v2/state"
 	"github.com/MetroReviews/backend-v2/types"
 	"github.com/bwmarrin/discordgo"
@@ -41,13 +44,13 @@ func (Router) Routes(r *chi.Mux) {
 func ourTeam(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 	gid := strconv.FormatUint(state.Config.GuildID(), 10)
 
-	roles, err := state.Discord.GuildRoles(gid)
+	guildRoles, err := state.Discord.GuildRoles(gid)
 	if err != nil {
 		return uapi.HttpResponse{Json: map[string]string{"detail": "Guild not found"}}
 	}
 
-	roleNames := make(map[string]string, len(roles))
-	for _, role := range roles {
+	roleNames := make(map[string]string, len(guildRoles))
+	for _, role := range guildRoles {
 		roleNames[role.ID] = role.Name
 	}
 
@@ -65,9 +68,21 @@ func ourTeam(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 		after = batch[len(batch)-1].User.ID
 	}
 
-	reviewerRole := state.Config.Reviewer
-	listOwnerRole := state.Config.ListOwner
-	sudoRole := state.Config.Sudo
+	// Reviewer/Sudo aren't static config role IDs anymore — they're
+	// whichever Discord role(s) the permissions system currently has
+	// linked to queue.review/the wildcard (see the roles/perms packages).
+	// DiscordRoleIDsWithPermission already folds the wildcard in, so a
+	// Sudo-linked role satisfies "reviewer" here too. "List Owner" was
+	// never part of that system (a display badge, not a permission), so
+	// it's still matched by role name.
+	reviewerRoleIDs, err := roles.DiscordRoleIDsWithPermission(d.Context, perms.QueueReview)
+	if err != nil {
+		return helpers.InternalError(err)
+	}
+	sudoRoleIDs, err := roles.DiscordRoleIDsWithPermission(d.Context, perms.Wildcard)
+	if err != nil {
+		return helpers.InternalError(err)
+	}
 
 	team := []types.TeamMember{}
 
@@ -81,13 +96,18 @@ func ourTeam(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 			if strings.Contains(lower, "list") && !strings.HasPrefix(lower, "list") {
 				listRoles = append(listRoles, name)
 			}
-
-			switch roleID {
-			case listOwnerRole:
+			if strings.EqualFold(name, "list owner") {
 				isListOwner = true
-			case sudoRole:
+			}
+
+			rid, err := strconv.ParseInt(roleID, 10, 64)
+			if err != nil {
+				continue
+			}
+			if helpers.Contains(sudoRoleIDs, rid) {
 				sudo = true
-			case reviewerRole:
+			}
+			if helpers.Contains(reviewerRoleIDs, rid) {
 				isReviewer = true
 			}
 		}

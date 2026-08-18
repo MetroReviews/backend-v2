@@ -47,7 +47,7 @@ func cmdDelBot(s *discordgo.Session, m *discordgo.MessageCreate, authorID int64,
 		s.ChannelMessageSend(m.ChannelID, "Invalid bot id")
 		return
 	}
-	tag, err := state.Pool.Exec(state.Context, "DELETE FROM bot_queue WHERE bot_id = $1", botID)
+	tag, err := state.Pool.Exec(state.Context, "DELETE FROM bots WHERE bot_id = $1", botID)
 	if err != nil {
 		state.Logger.Error("[bot] delbot failed", zap.Int64("bot_id", botID), zap.Error(err))
 		s.ChannelMessageSend(m.ChannelID, "Failed to delete bot.")

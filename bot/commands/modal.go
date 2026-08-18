@@ -4,76 +4,76 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/MetroReviews/backend-v2/silverpelt"
+	"github.com/MetroReviews/backend-v2/identity"
+	"github.com/MetroReviews/backend-v2/review"
 	"github.com/MetroReviews/backend-v2/state"
 	"github.com/MetroReviews/backend-v2/types"
 	"github.com/bwmarrin/discordgo"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
-func modalID(action types.Action) string {
-	switch action {
-	case types.ActionClaim:
-		return "claim_modal"
-	case types.ActionUnclaim:
-		return "unclaim_modal"
-	case types.ActionApprove:
-		return "approve_modal"
-	case types.ActionDeny:
-		return "deny_modal"
-	}
-	return "unknown_modal"
-}
-
-func actionFromModalID(id string) (types.Action, bool) {
-	switch id {
-	case "claim_modal":
-		return types.ActionClaim, true
-	case "unclaim_modal":
-		return types.ActionUnclaim, true
-	case "approve_modal":
-		return types.ActionApprove, true
-	case "deny_modal":
-		return types.ActionDeny, true
-	}
-	return 0, false
-}
-
-// openReviewModal opens the claim/unclaim/approve/deny modal. presetBotID
-// pre-fills the Bot ID field (still editable) when opened from a /queue
-// action button, so the reviewer isn't retyping an ID they just saw; pass ""
-// for the plain /claim /unclaim /approve /deny slash commands.
-func openReviewModal(s *discordgo.Session, i *discordgo.InteractionCreate, action types.Action, presetBotID string) {
-	title := map[types.Action]string{
-		types.ActionClaim:   "Claim Bot",
-		types.ActionUnclaim: "Unclaim Bot",
-		types.ActionApprove: "Approve Bot",
-		types.ActionDeny:    "Deny Bot",
+func modalID(action types.Action, subjectType string) string {
+	word := map[types.Action]string{
+		types.ActionClaim:   "claim",
+		types.ActionUnclaim: "unclaim",
+		types.ActionApprove: "approve",
+		types.ActionDeny:    "deny",
 	}[action]
+	if word == "" {
+		word = "unknown"
+	}
+	return word + "_modal:" + subjectType
+}
+
+// actionFromModalID parses a modalID back into its action and subject type.
+func actionFromModalID(id string) (action types.Action, subjectType string, ok bool) {
+	word, subjectType, found := strings.Cut(id, ":")
+	if !found {
+		return 0, "", false
+	}
+	switch word {
+	case "claim_modal":
+		return types.ActionClaim, subjectType, true
+	case "unclaim_modal":
+		return types.ActionUnclaim, subjectType, true
+	case "approve_modal":
+		return types.ActionApprove, subjectType, true
+	case "deny_modal":
+		return types.ActionDeny, subjectType, true
+	}
+	return 0, "", false
+}
+
+// openReviewModal opens the claim/unclaim/approve/deny modal for a bot or a
+// business. presetID pre-fills the ID field (still editable) when opened
+// from a /queue action button, so the reviewer isn't retyping an ID they
+// just saw; pass "" for the plain /claim /unclaim /approve /deny slash
+// commands.
+func openReviewModal(s *discordgo.Session, i *discordgo.InteractionCreate, subjectType string, action types.Action, presetID string) {
+	titleWord := map[types.Action]string{
+		types.ActionClaim:   "Claim",
+		types.ActionUnclaim: "Unclaim",
+		types.ActionApprove: "Approve",
+		types.ActionDeny:    "Deny",
+	}[action]
+	title := titleWord + " " + subjectLabel[subjectType]
 
 	components := []discordgo.MessageComponent{
 		row(&discordgo.TextInput{
-			CustomID: "bot_id", Label: "Bot ID", Style: discordgo.TextInputShort, Required: true,
-			Value: presetBotID,
+			CustomID: "id", Label: subjectLabel[subjectType] + " ID", Style: discordgo.TextInputShort, Required: true,
+			Value: presetID,
 		}),
-	}
-
-	if action != types.ActionClaim {
-		components = append(components, row(&discordgo.TextInput{
+		row(&discordgo.TextInput{
 			CustomID: "reason", Label: "Reason", Style: discordgo.TextInputParagraph,
 			Required: true, MinLength: 5, MaxLength: 4000,
-		}))
+		}),
 	}
-
-	components = append(components, row(&discordgo.TextInput{
-		CustomID: "resend", Label: "Resend to other lists (owner only, T/F)",
-		Style: discordgo.TextInputShort, Required: false, Value: "F",
-	}))
 
 	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseModal,
 		Data: &discordgo.InteractionResponseData{
-			CustomID:   modalID(action),
+			CustomID:   modalID(action, subjectType),
 			Title:      title,
 			Components: components,
 		},
@@ -83,11 +83,19 @@ func openReviewModal(s *discordgo.Session, i *discordgo.InteractionCreate, actio
 	}
 }
 
-// HandleModal handles the claim/unclaim/approve/deny modal submissions
-// opened by openReviewModal.
+// HandleModal handles every modal submission: the claim/unclaim/approve/
+// deny modals opened by openReviewModal, and the role create/rename
+// modals opened by roles_modal.go (routed here first since their custom
+// IDs don't fit actionFromModalID's word:subjectType shape).
 func HandleModal(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	data := i.ModalSubmitData()
-	action, ok := actionFromModalID(data.CustomID)
+
+	if data.CustomID == roleCreateModalID || strings.HasPrefix(data.CustomID, roleRenameModalPrefix) {
+		handleRoleModal(s, i, data)
+		return
+	}
+
+	action, subjectType, ok := actionFromModalID(data.CustomID)
 	if !ok {
 		return
 	}
@@ -98,30 +106,9 @@ func HandleModal(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	}
 
 	values := modalValues(data)
-
-	botID, err := strconv.ParseInt(strings.TrimSpace(values["bot_id"]), 10, 64)
-	if err != nil {
-		respondText(s, i, "Bot ID invalid", false)
-		return
-	}
-
-	resend := false
-	switch strings.ToLower(strings.TrimSpace(values["resend"])) {
-	case "t", "true":
-		resend = true
-	}
-
+	id := strings.TrimSpace(values["id"])
+	reason := values["reason"]
 	userID := interactionUserID(i)
-
-	if resend && !state.Config.IsOwner(userID) {
-		respondText(s, i, "You are not an owner", false)
-		return
-	}
-
-	reason := "STUB_REASON"
-	if action != types.ActionClaim {
-		reason = values["reason"]
-	}
 
 	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
@@ -130,13 +117,42 @@ func HandleModal(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		return
 	}
 
-	res := silverpelt.Handle(state.Context, silverpelt.Request{
-		BotID:    botID,
-		Reason:   reason,
-		Resend:   resend,
-		Action:   action,
-		Reviewer: userID,
-	})
+	// The review package only knows Metro users, not Discord IDs — resolve
+	// (or first-time-provision) the acting reviewer's Metro account.
+	reviewerID, err := identity.EnsureDiscordUser(state.Context, userID, interactionUsername(i))
+	if err != nil {
+		state.Logger.Error("[bot] failed to resolve reviewer identity", zap.Error(err))
+		content := "Failed to resolve your Metro account. Try again in a moment."
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content}) //nolint:errcheck
+		return
+	}
+
+	var res review.Result
+	switch subjectType {
+	case "bot":
+		botID, err := strconv.ParseInt(id, 10, 64)
+		if err != nil {
+			res = review.Result{Message: "Bot ID invalid"}
+		} else {
+			res = review.ApplyBotAction(state.Context, botID, action, reason, reviewerID)
+		}
+	case "business":
+		businessID, err := uuid.Parse(id)
+		if err != nil {
+			res = review.Result{Message: "Business ID invalid"}
+		} else {
+			res = review.ApplyBusinessAction(state.Context, businessID, action, reason, reviewerID)
+		}
+	case "project":
+		projectID, err := uuid.Parse(id)
+		if err != nil {
+			res = review.Result{Message: "Project ID invalid"}
+		} else {
+			res = review.ApplyProjectAction(state.Context, projectID, action, reason, reviewerID)
+		}
+	default:
+		res = review.Result{Message: "Unknown subject type"}
+	}
 
 	embed := buildResultEmbed(res)
 	if _, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
@@ -145,5 +161,5 @@ func HandleModal(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		state.Logger.Error("[bot] failed to send review result", zap.Error(err))
 	}
 
-	logAction(s, action, botID, userID, reason, resend, res)
+	logAction(s, action, subjectType, id, userID, reason, res)
 }

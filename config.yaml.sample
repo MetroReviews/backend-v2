@@ -1,17 +1,22 @@
-token:  # Main bot token
-helper_token:  # Secondary/helper bot token (unused directly, kept for parity) (optional)
-gid:  # Main guild ID
-reviewer:  # Reviewer role ID
-queue_channel:  # Channel where new bots are announced
-logs_channel:  # Channel where claim/unclaim/approve/deny actions are logged (optional)
-list_owner:  # List Owner role ID
-sudo:  # Sudo role ID
-test_ping_role:  # Optional role pinged instead of reviewer (optional)
-client_secret:  # Discord OAuth2 client secret
-owners:
-  - 
-postgres_url: postgres:///brc # e.g. postgres:///brc (optional)
-bind_addr: :8080 # e.g. :8080 (optional)
-allowed_host:  # admin/host, e.g. catnip.metrobots.xyz (optional)
-oauth_redirect:  # frostpaw redirect URI (optional)
-default_login_state:  # fallback panel origin (optional)
+discord:
+  client_id:  # Discord OAuth2 client ID
+  client_secret:  # Discord OAuth2 client secret
+  token:  # Discord bot token
+  staff_server_id:  # Staff server ID
+  queue_channel_id:  # Queue channel ID
+  logs_channel_id:  # Logs channel ID
+  owners:
+    - 
+
+server:
+  bind_addr: :8080 # e.g. :8080
+
+database:
+  postgres_url: postgres:///brc # e.g. postgres:///brc
+  max_conns: 20 # Max open connections in the Postgres pool
+  min_conns: 2 # Min idle connections kept warm in the Postgres pool
+
+auth:
+  allowed_host:  # admin/host, e.g. catnip.metrobots.xyz (optional)
+  oauth_redirect:  # frostpaw redirect URI (optional)
+  default_login_state:  # fallback panel origin (optional)

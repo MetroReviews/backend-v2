@@ -11,19 +11,13 @@ import (
 	"github.com/MetroReviews/backend-v2/helpers"
 	"github.com/MetroReviews/backend-v2/state"
 	"github.com/MetroReviews/backend-v2/types"
-	"github.com/google/uuid"
 	"github.com/infinitybotlist/eureka/uapi"
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 )
 
 func postBot(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
-	listID, err := uuid.Parse(r.URL.Query().Get("list_id"))
-	if err != nil {
-		return uapi.DefaultResponse(http.StatusBadRequest)
-	}
-
-	if resp := api.AuthList(d.Context, listID, r.Header.Get("Authorization")); resp != nil {
+	if _, resp := api.AuthUser(d.Context, r); resp != nil {
 		return *resp
 	}
 
@@ -109,29 +103,24 @@ func postBot(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 		return helpers.ErrorResponse(http.StatusBadRequest, "Bot does not exist?")
 	}
 
-	crossAdd := true
-	if payload.CrossAdd != nil {
-		crossAdd = *payload.CrossAdd
-	}
-
 	// INSERT ... ON CONFLICT DO NOTHING RETURNING replaces a separate
 	// SELECT-then-INSERT existence check: that pair raced with concurrent
 	// submissions of the same bot (both could pass the SELECT before either
 	// INSERT lands), where this is a single atomic statement.
 	var inserted int64
 	err = state.Pool.QueryRow(d.Context, `
-		INSERT INTO bot_queue (
-			bot_id, username, banner, list_source, description, long_description,
+		INSERT INTO bots (
+			bot_id, username, banner, description, long_description,
 			website, invite, owner, support, donate, library, nsfw, prefix, tags,
-			review_note, extra_owners, cross_add, state
+			review_note, extra_owners, state
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
 		)
 		ON CONFLICT (bot_id) DO NOTHING
 		RETURNING bot_id`,
-		botID, user.Username, banner, listID, payload.Description, payload.LongDescription,
+		botID, user.Username, banner, payload.Description, payload.LongDescription,
 		website, invite, owner, support, payload.Donate, payload.Library, payload.NSFW, payload.Prefix, tags,
-		payload.ReviewNote, extraOwners, crossAdd, types.StatePending,
+		payload.ReviewNote, extraOwners, types.StatePending,
 	).Scan(&inserted)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return helpers.ErrorResponse(http.StatusConflict, "Bot already in queue")

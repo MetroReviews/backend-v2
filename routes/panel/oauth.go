@@ -26,12 +26,12 @@ func checkNonceTime(nonce string) bool {
 func getOAuth2(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
-		origin = state.Config.DefaultLoginState
+		origin = state.Config.Auth.DefaultLoginState
 	}
 
 	authURL := "https://discord.com/api/oauth2/authorize?client_id=" + appID() +
 		"&permissions=0&scope=identify%20guilds&response_type=code&redirect_uri=" +
-		url.QueryEscape(state.Config.OAuthRedirect) + "&state=" + origin
+		url.QueryEscape(state.Config.Auth.OAuthRedirect) + "&state=" + origin
 
 	return uapi.HttpResponse{Json: oauthURLResponse{URL: authURL}}
 }
