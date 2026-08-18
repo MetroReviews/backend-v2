@@ -1,3 +1,9 @@
+// Package team exposes GET /team: the review team, sourced from the
+// roles/user_roles tables (see the roles/perms packages) rather than a
+// live Discord guild lookup. Those tables are already kept in sync with
+// Discord role membership by roles.SyncMember/SyncGuild, so reading them
+// directly here means /team works without hitting the Discord API (or
+// even needing the bot connected) on every request.
 package team
 
 import (
@@ -7,11 +13,11 @@ import (
 
 	"github.com/MetroReviews/backend-v2/helpers"
 	"github.com/MetroReviews/backend-v2/perms"
-	"github.com/MetroReviews/backend-v2/roles"
 	"github.com/MetroReviews/backend-v2/state"
 	"github.com/MetroReviews/backend-v2/types"
 	"github.com/bwmarrin/discordgo"
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	docs "github.com/infinitybotlist/eureka/doclib"
 	"github.com/infinitybotlist/eureka/uapi"
 )
@@ -32,7 +38,7 @@ func (Router) Routes(r *chi.Mux) {
 		Docs: func() *docs.Doc {
 			return &docs.Doc{
 				Summary:     "Our Team",
-				Description: "Returns the review team: every guild member holding the reviewer role.",
+				Description: "Returns the review team: every user holding a role that grants the queue.review permission (see the roles/perms packages). Read from the database, not a live Discord lookup.",
 				Resp:        []types.TeamMember{},
 				RespName:    "TeamMemberArray",
 			}
@@ -41,57 +47,71 @@ func (Router) Routes(r *chi.Mux) {
 	}.Route(r)
 }
 
+// memberRoles accumulates one user's held role names and effective
+// permission set while scanning ourTeam's query, one row per role held.
+type memberRoles struct {
+	discordID   *int64
+	username    *string
+	avatar      *string
+	roleNames   []string
+	permissions []string
+}
+
 func ourTeam(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
-	gid := strconv.FormatUint(state.Config.GuildID(), 10)
-
-	guildRoles, err := state.Discord.GuildRoles(gid)
-	if err != nil {
-		return uapi.HttpResponse{Json: map[string]string{"detail": "Guild not found"}}
-	}
-
-	roleNames := make(map[string]string, len(guildRoles))
-	for _, role := range guildRoles {
-		roleNames[role.ID] = role.Name
-	}
-
-	var members []*discordgo.Member
-	after := ""
-	for {
-		batch, err := state.Discord.GuildMembers(gid, after, 1000)
-		if err != nil {
-			return uapi.HttpResponse{Json: map[string]string{"detail": "Guild not found"}}
-		}
-		members = append(members, batch...)
-		if len(batch) < 1000 {
-			break
-		}
-		after = batch[len(batch)-1].User.ID
-	}
-
-	// Reviewer/Sudo aren't static config role IDs anymore — they're
-	// whichever Discord role(s) the permissions system currently has
-	// linked to queue.review/the wildcard (see the roles/perms packages).
-	// DiscordRoleIDsWithPermission already folds the wildcard in, so a
-	// Sudo-linked role satisfies "reviewer" here too. "List Owner" was
-	// never part of that system (a display badge, not a permission), so
-	// it's still matched by role name.
-	reviewerRoleIDs, err := roles.DiscordRoleIDsWithPermission(d.Context, perms.QueueReview)
+	rows, err := state.Pool.Query(d.Context, `
+		SELECT u.id, u.username, u.avatar, da.discord_id, r.name, r.permissions
+		FROM user_roles ur
+		JOIN users u ON u.id = ur.user_id
+		JOIN roles r ON r.id = ur.role_id
+		LEFT JOIN discord_accounts da ON da.user_id = u.id
+		ORDER BY u.username`)
 	if err != nil {
 		return helpers.InternalError(err)
 	}
-	sudoRoleIDs, err := roles.DiscordRoleIDsWithPermission(d.Context, perms.Wildcard)
-	if err != nil {
+	defer rows.Close()
+
+	members := map[uuid.UUID]*memberRoles{}
+	var order []uuid.UUID
+	for rows.Next() {
+		var userID uuid.UUID
+		var username, avatar *string
+		var discordID *int64
+		var roleName string
+		var rolePermissions []string
+		if err := rows.Scan(&userID, &username, &avatar, &discordID, &roleName, &rolePermissions); err != nil {
+			return helpers.InternalError(err)
+		}
+
+		m, ok := members[userID]
+		if !ok {
+			m = &memberRoles{discordID: discordID, username: username, avatar: avatar}
+			members[userID] = m
+			order = append(order, userID)
+		}
+		m.roleNames = append(m.roleNames, roleName)
+		m.permissions = perms.Union(m.permissions, rolePermissions)
+	}
+	if err := rows.Err(); err != nil {
 		return helpers.InternalError(err)
 	}
 
 	team := []types.TeamMember{}
+	for _, userID := range order {
+		m := members[userID]
+		if !perms.Has(m.permissions, perms.QueueReview) {
+			continue
+		}
+		// TeamMember is inherently Discord-shaped (ID/Avatar are used to
+		// @mention and show the member) — nothing sensible to show for an
+		// account with no linked Discord, so skip it rather than return a
+		// broken-looking entry.
+		if m.discordID == nil {
+			continue
+		}
 
-	for _, member := range members {
 		var listRoles []string
-		var isListOwner, sudo, isReviewer bool
-
-		for _, roleID := range member.Roles {
-			name := roleNames[roleID]
+		var isListOwner bool
+		for _, name := range m.roleNames {
 			lower := strings.ToLower(name)
 			if strings.Contains(lower, "list") && !strings.HasPrefix(lower, "list") {
 				listRoles = append(listRoles, name)
@@ -99,29 +119,30 @@ func ourTeam(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 			if strings.EqualFold(name, "list owner") {
 				isListOwner = true
 			}
-
-			rid, err := strconv.ParseInt(roleID, 10, 64)
-			if err != nil {
-				continue
-			}
-			if helpers.Contains(sudoRoleIDs, rid) {
-				sudo = true
-			}
-			if helpers.Contains(reviewerRoleIDs, rid) {
-				isReviewer = true
-			}
 		}
 
-		if isReviewer {
-			team = append(team, types.TeamMember{
-				Username:    member.User.Username,
-				ID:          member.User.ID,
-				Avatar:      member.User.AvatarURL(""),
-				IsListOwner: isListOwner,
-				Sudo:        sudo,
-				Roles:       listRoles,
-			})
+		discordIDStr := strconv.FormatInt(*m.discordID, 10)
+		username := ""
+		if m.username != nil {
+			username = *m.username
 		}
+		var avatarHash string
+		if m.avatar != nil {
+			avatarHash = *m.avatar
+		}
+		// AvatarURL is pure string-building (no network call) — safe to
+		// call on a struct built from our own DB columns instead of a
+		// live discordgo.User fetched from the API.
+		discordUser := &discordgo.User{ID: discordIDStr, Username: username, Discriminator: "0", Avatar: avatarHash}
+
+		team = append(team, types.TeamMember{
+			Username:    username,
+			ID:          discordIDStr,
+			Avatar:      discordUser.AvatarURL(""),
+			IsListOwner: isListOwner,
+			Sudo:        perms.Has(m.permissions, perms.Wildcard),
+			Roles:       listRoles,
+		})
 	}
 
 	return uapi.HttpResponse{Json: team}
