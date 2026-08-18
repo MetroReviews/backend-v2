@@ -7,6 +7,7 @@ import (
 	"github.com/MetroReviews/backend-v2/api"
 	"github.com/MetroReviews/backend-v2/bot"
 	"github.com/MetroReviews/backend-v2/routes/actions"
+	authroutes "github.com/MetroReviews/backend-v2/routes/auth"
 	"github.com/MetroReviews/backend-v2/routes/bots"
 	"github.com/MetroReviews/backend-v2/routes/businesses"
 	"github.com/MetroReviews/backend-v2/routes/categories"
@@ -27,6 +28,7 @@ import (
 )
 
 var routers = []uapi.APIRouter{
+	authroutes.Router{},
 	businesses.Router{},
 	bots.Router{},
 	reviews.Router{},

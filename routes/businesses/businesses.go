@@ -12,7 +12,7 @@ import (
 
 const tagName = "Businesses"
 
-const businessColumns = `id, category_id, slug, name, description, website, logo, banner, address, city, country, metadata, owner_id, submitted_by, status, avg_rating, review_count, created_at, updated_at`
+const businessColumns = `id, category_id, slug, name, description, website, logo, banner, address, city, country, metadata, owner_id, submitted_by, status, reviewer, avg_rating, review_count, created_at, updated_at`
 
 type Router struct{}
 
