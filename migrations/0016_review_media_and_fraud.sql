@@ -1,0 +1,4 @@
+
+ALTER TABLE reviews ADD COLUMN photos TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE reviews ADD COLUMN flag_reason TEXT;
+ALTER TABLE businesses ADD COLUMN gallery TEXT[] NOT NULL DEFAULT '{}';

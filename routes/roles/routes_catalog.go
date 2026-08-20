@@ -1,6 +1,3 @@
-// Permission catalog + role CRUD route registration, matching get.go/crud.go.
-// Membership/sync registration lives in routes_members.go, matching
-// members.go/sync.go.
 package roles
 
 import (

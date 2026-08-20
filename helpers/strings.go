@@ -2,9 +2,6 @@ package helpers
 
 import "strings"
 
-// Truncate shortens s to at most max characters, replacing the last
-// character with an ellipsis when it had to cut anything. Used to keep
-// user-supplied text within Discord's field/option length limits.
 func Truncate(s string, max int) string {
 	if len(s) <= max {
 		return s
@@ -15,8 +12,6 @@ func Truncate(s string, max int) string {
 	return s[:max-1] + "…"
 }
 
-// HTTPSify normalizes v to an https:// URL: it's returned as-is if already
-// https, upgraded if it's http, and rejected (ok=false) otherwise.
 func HTTPSify(v string) (string, bool) {
 	if strings.HasPrefix(v, "https://") {
 		return v, true
@@ -28,9 +23,17 @@ func HTTPSify(v string) (string, bool) {
 	return "", false
 }
 
-// InviteURL builds the Discord OAuth2 invite link for a bot ID. Shared by
-// the bot's /invite command, its queue/detail views, and the "bot added to
-// queue" announcement.
-func InviteURL(botID string) string {
-	return "https://discord.com/oauth2/authorize?client_id=" + botID + "&scope=bot%20applications.commands&permissions=0"
+func ValidateImageURLs(urls []string, max int) (out []string, ok bool) {
+	if len(urls) > max {
+		return nil, false
+	}
+	out = make([]string, 0, len(urls))
+	for _, u := range urls {
+		httpsURL, valid := HTTPSify(u)
+		if !valid {
+			return nil, false
+		}
+		out = append(out, httpsURL)
+	}
+	return out, true
 }

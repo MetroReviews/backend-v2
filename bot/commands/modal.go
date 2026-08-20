@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"strconv"
 	"strings"
 
 	"github.com/MetroReviews/backend-v2/identity"
@@ -26,7 +25,6 @@ func modalID(action types.Action, subjectType string) string {
 	return word + "_modal:" + subjectType
 }
 
-// actionFromModalID parses a modalID back into its action and subject type.
 func actionFromModalID(id string) (action types.Action, subjectType string, ok bool) {
 	word, subjectType, found := strings.Cut(id, ":")
 	if !found {
@@ -45,11 +43,6 @@ func actionFromModalID(id string) (action types.Action, subjectType string, ok b
 	return 0, "", false
 }
 
-// openReviewModal opens the claim/unclaim/approve/deny modal for a bot or a
-// business. presetID pre-fills the ID field (still editable) when opened
-// from a /queue action button, so the reviewer isn't retyping an ID they
-// just saw; pass "" for the plain /claim /unclaim /approve /deny slash
-// commands.
 func openReviewModal(s *discordgo.Session, i *discordgo.InteractionCreate, subjectType string, action types.Action, presetID string) {
 	titleWord := map[types.Action]string{
 		types.ActionClaim:   "Claim",
@@ -83,10 +76,6 @@ func openReviewModal(s *discordgo.Session, i *discordgo.InteractionCreate, subje
 	}
 }
 
-// HandleModal handles every modal submission: the claim/unclaim/approve/
-// deny modals opened by openReviewModal, and the role create/rename
-// modals opened by roles_modal.go (routed here first since their custom
-// IDs don't fit actionFromModalID's word:subjectType shape).
 func HandleModal(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	data := i.ModalSubmitData()
 
@@ -117,25 +106,16 @@ func HandleModal(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		return
 	}
 
-	// The review package only knows Metro users, not Discord IDs — resolve
-	// (or first-time-provision) the acting reviewer's Metro account.
 	reviewerID, err := identity.EnsureDiscordUser(state.Context, userID, interactionUsername(i))
 	if err != nil {
 		state.Logger.Error("[bot] failed to resolve reviewer identity", zap.Error(err))
 		content := "Failed to resolve your Metro account. Try again in a moment."
-		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content}) //nolint:errcheck
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
 		return
 	}
 
 	var res review.Result
 	switch subjectType {
-	case "bot":
-		botID, err := strconv.ParseInt(id, 10, 64)
-		if err != nil {
-			res = review.Result{Message: "Bot ID invalid"}
-		} else {
-			res = review.ApplyBotAction(state.Context, botID, action, reason, reviewerID)
-		}
 	case "business":
 		businessID, err := uuid.Parse(id)
 		if err != nil {

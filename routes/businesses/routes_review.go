@@ -1,8 +1,3 @@
-// Review-queue and ownership-claim route registration for /businesses,
-// matching review.go/claim.go. Namespaced under /review/ so it can't
-// collide with the ownership-claim routes below, which use the same
-// "claim" word for a completely different thing (a business owner
-// claiming their business) — see review.go's package comment.
 package businesses
 
 import (
@@ -15,9 +10,7 @@ import (
 )
 
 func registerReviewRoutes(r *chi.Mux) {
-	// Review queue: the same claim -> approve/deny pipeline bots go through
-	// (see the review package), surfaced together with bots in the Discord
-	// /queue command.
+
 	uapi.Route{
 		Method:  uapi.POST,
 		Pattern: "/businesses/{id}/review/claim",

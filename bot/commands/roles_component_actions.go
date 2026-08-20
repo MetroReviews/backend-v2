@@ -1,5 +1,3 @@
-// The individual show/apply/delete/sync handlers roles_component.go's
-// dispatcher routes into.
 package commands
 
 import (
@@ -54,8 +52,7 @@ func showDeleteConfirm(s *discordgo.Session, i *discordgo.InteractionCreate, rol
 }
 
 func applyPermissionSelection(s *discordgo.Session, i *discordgo.InteractionCreate, roleID uuid.UUID, selected []string) {
-	// The wildcard subsumes everything else — store just it rather than
-	// whatever else happened to be selected alongside it.
+
 	permissions := selected
 	for _, p := range selected {
 		if p == "*" {
@@ -73,10 +70,6 @@ func applyPermissionSelection(s *discordgo.Session, i *discordgo.InteractionCrea
 	showRoleDetail(s, i, roleID)
 }
 
-// applyDiscordRoleLink defers before touching the DB (rather than going
-// through showRoleDetail's defer, like every other handler here) because
-// its failure path needs to send a followup error message, which requires
-// the interaction to already be acknowledged.
 func applyDiscordRoleLink(s *discordgo.Session, i *discordgo.InteractionCreate, roleID uuid.UUID, values []string) {
 	if !deferUpdate(s, i) {
 		return
@@ -97,9 +90,6 @@ func applyDiscordRoleLink(s *discordgo.Session, i *discordgo.InteractionCreate, 
 	redrawRoleDetail(s, i, roleID)
 }
 
-// redrawRoleDetail replaces the message with roleID's detail view without
-// deferring first — for callers (applyDiscordRoleLink) that already
-// acknowledged the interaction themselves before doing their DB work.
 func redrawRoleDetail(s *discordgo.Session, i *discordgo.InteractionCreate, roleID uuid.UUID) {
 	embed, components, err := buildRoleDetailView(roleID)
 	if err != nil {

@@ -1,20 +1,10 @@
-// Package review implements the shared moderation queue: the
-// claim -> approve/deny state machine a submitted bot, business or project
-// moves through before it's publicly visible, surfaced together in the
-// Discord /queue command. This replaces silverpelt, which did the same
-// state machine for bots only and then fanned the result out over
-// webhooks to every other enrolled list. There's no fixed list of other
-// lists to fan out to anymore, but the shape came back: every action's
-// shared finishAction tail fires the matching event through the webhooks
-// package, so anyone can register their own webhook against a subject and
-// hear about it — see that package for delivery/signing.
 package review
 
 import (
 	"context"
 	"errors"
-	"strconv"
 
+	"github.com/MetroReviews/backend-v2/cache"
 	"github.com/MetroReviews/backend-v2/state"
 	"github.com/MetroReviews/backend-v2/types"
 	"github.com/MetroReviews/backend-v2/webhooks"
@@ -22,10 +12,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// actionDef describes what a review action needs: which states it may be
-// applied from, the error shown when it can't, and the state it transitions
-// to. Shared by bots and businesses — the queue mechanics are identical,
-// only the underlying table differs.
 type actionDef struct {
 	AllowedStates []types.State
 	Error         string
@@ -64,60 +50,11 @@ func stateAllowed(allowed []types.State, s types.State) bool {
 	return false
 }
 
-// Result is the outcome of applying one review action to one bot or business.
 type Result struct {
 	OK      bool
-	Message string // human-readable outcome; set on both success and failure
+	Message string
 }
 
-// ApplyBotAction validates and applies a claim/unclaim/approve/deny to a
-// bot, recording it in moderation_actions. reviewer is the acting staff
-// member's Metro user id (types.User.ID) — never a raw Discord ID; callers
-// that only have a Discord ID (the Discord bot's /queue commands) resolve
-// it via identity.EnsureDiscordUser first. Callers are expected to have
-// already checked that reviewer belongs to a staff member.
-func ApplyBotAction(ctx context.Context, botID int64, action types.Action, reason string, reviewer uuid.UUID) Result {
-	def, ok := actions[action]
-	if !ok {
-		return Result{Message: "Unknown action"}
-	}
-	if len(reason) < 5 {
-		return Result{Message: "Reason must be at least 5 characters"}
-	}
-
-	var botState types.State
-	err := state.Pool.QueryRow(ctx, "SELECT state FROM bots WHERE bot_id = $1", botID).Scan(&botState)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Result{Message: "Bot not found"}
-	}
-	if err != nil {
-		return Result{Message: "Failed to load bot: " + err.Error()}
-	}
-
-	if !stateAllowed(def.AllowedStates, botState) {
-		return Result{Message: def.Error}
-	}
-
-	tx, err := state.Pool.Begin(ctx)
-	if err != nil {
-		return Result{Message: "Failed to start transaction: " + err.Error()}
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck // no-op once committed
-
-	if action == types.ActionClaim {
-		if _, err := tx.Exec(ctx,
-			"UPDATE bots SET state = $1, reviewer = $2 WHERE bot_id = $3", def.NewState, reviewer, botID,
-		); err != nil {
-			return Result{Message: "Failed to update bot: " + err.Error()}
-		}
-	} else if _, err := tx.Exec(ctx, "UPDATE bots SET state = $1 WHERE bot_id = $2", def.NewState, botID); err != nil {
-		return Result{Message: "Failed to update bot: " + err.Error()}
-	}
-
-	return finishAction(ctx, tx, "bot", strconv.FormatInt(botID, 10), action, reason, reviewer)
-}
-
-// ApplyBusinessAction is ApplyBotAction's counterpart for businesses.
 func ApplyBusinessAction(ctx context.Context, businessID uuid.UUID, action types.Action, reason string, reviewer uuid.UUID) Result {
 	def, ok := actions[action]
 	if !ok {
@@ -144,7 +81,7 @@ func ApplyBusinessAction(ctx context.Context, businessID uuid.UUID, action types
 	if err != nil {
 		return Result{Message: "Failed to start transaction: " + err.Error()}
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck // no-op once committed
+	defer tx.Rollback(ctx)
 
 	if action == types.ActionClaim {
 		if _, err := tx.Exec(ctx,
@@ -158,11 +95,21 @@ func ApplyBusinessAction(ctx context.Context, businessID uuid.UUID, action types
 		return Result{Message: "Failed to update business: " + err.Error()}
 	}
 
-	return finishAction(ctx, tx, "business", businessID.String(), action, reason, reviewer)
+	res := finishAction(ctx, tx, "business", businessID.String(), action, reason, reviewer)
+	if res.OK {
+		InvalidateBusinessCache(ctx, businessID)
+	}
+	return res
 }
 
-// ApplyProjectAction is ApplyBotAction's counterpart for projects — a
-// business's posted portfolio items, which go through the same queue.
+func InvalidateBusinessCache(ctx context.Context, businessID uuid.UUID) {
+	var slug string
+	if err := state.Pool.QueryRow(ctx, "SELECT slug FROM businesses WHERE id = $1", businessID).Scan(&slug); err != nil {
+		return
+	}
+	_ = cache.Del(ctx, "biz:detail:"+slug)
+}
+
 func ApplyProjectAction(ctx context.Context, projectID uuid.UUID, action types.Action, reason string, reviewer uuid.UUID) Result {
 	def, ok := actions[action]
 	if !ok {
@@ -189,7 +136,7 @@ func ApplyProjectAction(ctx context.Context, projectID uuid.UUID, action types.A
 	if err != nil {
 		return Result{Message: "Failed to start transaction: " + err.Error()}
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck // no-op once committed
+	defer tx.Rollback(ctx)
 
 	if action == types.ActionClaim {
 		if _, err := tx.Exec(ctx,
@@ -216,12 +163,6 @@ func recordAction(ctx context.Context, tx pgx.Tx, targetType, targetID string, a
 	return nil
 }
 
-// finishAction is every ApplyXAction's shared tail: record the
-// moderation_actions row, commit, and — only once that's actually landed —
-// fire the matching webhooks.EventQueue* event. Centralizing this here
-// means a future ApplyXAction (a new reviewable subject type) gets
-// webhook delivery for free just by ending with this same call, the same
-// way it already gets moderation_actions logging for free.
 func finishAction(ctx context.Context, tx pgx.Tx, targetType, targetID string, action types.Action, reason string, reviewer uuid.UUID) Result {
 	if err := recordAction(ctx, tx, targetType, targetID, action, reason, reviewer); err != nil {
 		return Result{Message: err.Error()}

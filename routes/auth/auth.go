@@ -1,16 +1,3 @@
-// Package auth exposes POST /auth/login: a token-introspection login for
-// first-party clients (the public website) that have already run their own
-// Discord OAuth2 handshake and hold a Discord access token, but need a
-// Metro session_token to make authenticated calls (posting reviews, filing
-// claims, ...).
-//
-// It is the non-panel sibling of routes/panel/frostpaw: frostpaw exchanges
-// an OAuth code and hands the session back inside a redirect ticket for the
-// staff panel, whereas this verifies a caller-supplied access token
-// directly against Discord and returns the session as JSON. Both mint the
-// exact same discord_accounts.session_token that api.AuthUser validates, so
-// a website login is indistinguishable from a panel login to every
-// downstream handler.
 package auth
 
 import (
@@ -23,22 +10,20 @@ import (
 	"github.com/MetroReviews/backend-v2/roles"
 	"github.com/MetroReviews/backend-v2/state"
 	"github.com/go-chi/chi/v5"
-	"github.com/infinitybotlist/eureka/crypto"
-	docs "github.com/infinitybotlist/eureka/doclib"
 	"github.com/infinitybotlist/eureka/jsonimpl"
 	"github.com/infinitybotlist/eureka/uapi"
 )
-
-// sessionTTL matches the panel login's session lifetime (see
-// routes/panel/callback.go) — a website login is just as long-lived.
-const sessionTTL = 30 * 24 * time.Hour
 
 const tagName = "Auth"
 
 type Router struct{}
 
 func (Router) Tag() (string, string) {
-	return tagName, "First-party login: exchange a Discord access token for a Metro session."
+	return tagName, "Login: Discord access-token exchange, email/password register & login, and linking a password onto an existing account."
+}
+
+func (Router) Routes(r *chi.Mux) {
+	registerRoutes(r)
 }
 
 type loginRequest struct {
@@ -54,24 +39,11 @@ type loginResponse struct {
 	Avatar       string    `json:"avatar" description:"The authenticated user's Discord avatar hash"`
 }
 
-func (Router) Routes(r *chi.Mux) {
-	uapi.Route{
-		Method:  uapi.POST,
-		Pattern: "/auth/login",
-		OpId:    "auth_login",
-		Docs: func() *docs.Doc {
-			return &docs.Doc{
-				Summary:     "Login",
-				Description: "Verifies a Discord access token against Discord and mints a Metro session token for it, creating the Metro user on first login. Intended for first-party clients that run their own Discord OAuth2 flow.",
-				Req:         loginRequest{},
-				Resp:        loginResponse{},
-			}
-		},
-		Handler: login,
-	}.Route(r)
-}
-
 func login(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
+	if resp := helpers.RateLimit(r, "auth-login", 20, time.Hour); resp != nil {
+		return *resp
+	}
+
 	var payload loginRequest
 	if hresp, ok := uapi.MarshalReq(r, &payload); !ok {
 		return hresp
@@ -82,9 +54,6 @@ func login(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 		tokenType = "Bearer"
 	}
 
-	// Verify the token by asking Discord who it belongs to. A forged or
-	// expired token fails here, so the identity we mint a session for is
-	// always one the caller genuinely holds.
 	req, _ := http.NewRequestWithContext(d.Context, http.MethodGet, "https://discord.com/api/v10/users/@me", nil)
 	req.Header.Set("Authorization", tokenType+" "+payload.AccessToken)
 	userResp, err := http.DefaultClient.Do(req)
@@ -107,8 +76,6 @@ func login(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 		return helpers.ErrorResponse(http.StatusBadRequest, "Malformed Discord user ID")
 	}
 
-	// find-or-create the Metro user this Discord account links to, then
-	// sync its profile fields — same steps the panel callback runs.
 	metroUserID, err := identity.EnsureDiscordUser(d.Context, discordID, user.Username)
 	if err != nil {
 		return helpers.InternalError(err)
@@ -121,10 +88,6 @@ func login(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 		return helpers.InternalError(err)
 	}
 
-	// Best-effort role sync: this is what sets/clears is_staff, so a staff
-	// member logging in via the website gets the same standing they'd get
-	// via the panel. A non-member (or the bot being offline) just yields no
-	// roles, which is fine for an ordinary reviewer.
 	var memberRoles []string
 	if state.Discord != nil {
 		gid := strconv.FormatUint(state.Config.GuildID(), 10)
@@ -136,14 +99,8 @@ func login(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 		return helpers.InternalError(err)
 	}
 
-	sessionToken := crypto.RandString(64)
-	expiresAt := time.Now().Add(sessionTTL)
-
-	if _, err := state.Pool.Exec(d.Context, `
-		UPDATE discord_accounts SET session_token = $1, session_expires_at = $2
-		WHERE discord_id = $3`,
-		sessionToken, expiresAt, discordID,
-	); err != nil {
+	sessionToken, expiresAt, err := identity.NewSession(d.Context, metroUserID)
+	if err != nil {
 		return helpers.InternalError(err)
 	}
 

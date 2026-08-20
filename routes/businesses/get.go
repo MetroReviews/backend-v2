@@ -4,9 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
+	"github.com/MetroReviews/backend-v2/analytics"
 	"github.com/MetroReviews/backend-v2/api"
+	"github.com/MetroReviews/backend-v2/cache"
 	"github.com/MetroReviews/backend-v2/helpers"
 	"github.com/MetroReviews/backend-v2/state"
 	"github.com/MetroReviews/backend-v2/types"
@@ -15,8 +19,16 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+const businessDetailTTL = 60 * time.Second
+const businessListTTL = 20 * time.Second
+
 func getBusiness(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 	slug := chi.URLParam(r, "slug")
+	cacheKey := "biz:detail:" + slug
+
+	if cached, ok := cache.Get[types.Business](d.Context, cacheKey); ok {
+		return uapi.HttpResponse{Json: cached}
+	}
 
 	rows, err := state.Pool.Query(d.Context, "SELECT "+businessColumns+" FROM businesses WHERE slug = $1", slug)
 	if err != nil {
@@ -36,6 +48,9 @@ func getBusiness(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 		if resp != nil || staff == nil {
 			return uapi.DefaultResponse(http.StatusNotFound)
 		}
+	} else {
+		_ = cache.Set(d.Context, cacheKey, business, businessDetailTTL)
+		analytics.RecordView(d.Context, business.ID)
 	}
 
 	return uapi.HttpResponse{Json: business}
@@ -44,9 +59,6 @@ func getBusiness(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 func getAllBusinesses(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 	q := r.URL.Query()
 
-	// Column names below are all literal strings chosen by this code, never
-	// derived from request input, so building the WHERE/ORDER clauses with
-	// fmt is safe; user input only ever flows in as bind parameters.
 	var conditions []string
 	var args []any
 
@@ -70,21 +82,60 @@ func getAllBusinesses(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 	}
 
 	if search := q.Get("q"); search != "" {
-		conditions = append(conditions, "name ILIKE "+arg("%"+search+"%"))
+		conditions = append(conditions,
+			"(name ILIKE "+arg("%"+search+"%")+" OR description ILIKE "+arg("%"+search+"%")+
+				" OR search_vector @@ websearch_to_tsquery('english', "+arg(search)+"))")
 	}
 
-	query := "SELECT " + businessColumns + " FROM businesses"
+	if city := q.Get("city"); city != "" {
+		conditions = append(conditions, "city ILIKE "+arg(city))
+	}
+	if country := q.Get("country"); country != "" {
+		conditions = append(conditions, "country ILIKE "+arg(country))
+	}
+	if minRatingStr := q.Get("min_rating"); minRatingStr != "" {
+		if minRating, err := strconv.ParseFloat(minRatingStr, 64); err == nil {
+			conditions = append(conditions, "avg_rating >= "+arg(minRating))
+		}
+	}
+
+	var lat, lng *float64
+	if v, err := strconv.ParseFloat(q.Get("lat"), 64); err == nil {
+		lat = &v
+	}
+	if v, err := strconv.ParseFloat(q.Get("lng"), 64); err == nil {
+		lng = &v
+	}
+	latArg, lngArg := arg(lat), arg(lng)
+
+	limit, offset := helpers.Pagination(r, 20, 100)
+
+	inner := "SELECT " + businessColumns + ", " + distanceExpr(latArg, lngArg) + " AS distance_km FROM businesses"
 	if len(conditions) > 0 {
-		query += " WHERE " + strings.Join(conditions, " AND ")
+		inner += " WHERE " + strings.Join(conditions, " AND ")
 	}
 
+	secondary := "created_at DESC"
 	switch q.Get("sort") {
 	case "rating":
-		query += " ORDER BY avg_rating DESC, review_count DESC"
+		secondary = "avg_rating DESC, review_count DESC"
 	case "reviews":
-		query += " ORDER BY review_count DESC"
-	default:
-		query += " ORDER BY created_at DESC"
+		secondary = "review_count DESC"
+	case "distance":
+		secondary = "distance_km ASC NULLS LAST"
+	}
+
+	query := "SELECT * FROM (" + inner + ") sub"
+	if radiusStr := q.Get("radius_km"); radiusStr != "" {
+		if radius, err := strconv.ParseFloat(radiusStr, 64); err == nil {
+			query += " WHERE distance_km IS NOT NULL AND distance_km <= " + arg(radius)
+		}
+	}
+	query += " ORDER BY featured DESC, " + secondary + " LIMIT " + arg(limit) + " OFFSET " + arg(offset)
+
+	cacheKey := "biz:list:" + r.URL.RawQuery
+	if cached, ok := cache.Get[[]types.BusinessSearchResult](d.Context, cacheKey); ok {
+		return uapi.HttpResponse{Json: cached}
 	}
 
 	rows, err := state.Pool.Query(d.Context, query, args...)
@@ -92,10 +143,24 @@ func getAllBusinesses(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 		return helpers.InternalError(err)
 	}
 
-	list, err := pgx.CollectRows(rows, pgx.RowToStructByName[types.Business])
+	list, err := pgx.CollectRows(rows, pgx.RowToStructByName[types.BusinessSearchResult])
 	if err != nil {
 		return helpers.InternalError(err)
 	}
 
+	_ = cache.Set(d.Context, cacheKey, list, businessListTTL)
+
 	return uapi.HttpResponse{Json: list}
+}
+
+func distanceExpr(latArg, lngArg string) string {
+
+	return fmt.Sprintf(
+		`(CASE WHEN %s::double precision IS NULL OR %s::double precision IS NULL OR latitude IS NULL OR longitude IS NULL THEN NULL ELSE
+			6371 * acos(LEAST(1, GREATEST(-1,
+				cos(radians(%s::double precision)) * cos(radians(latitude)) * cos(radians(longitude) - radians(%s::double precision))
+				+ sin(radians(%s::double precision)) * sin(radians(latitude))
+			))) END)`,
+		latArg, lngArg, latArg, lngArg, latArg,
+	)
 }

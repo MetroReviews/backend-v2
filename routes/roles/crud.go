@@ -17,9 +17,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// invalidPermissions returns every slug in requested that isn't in perms'
-// catalog (or the wildcard), for rejecting typos up front rather than
-// silently storing a permission nothing ever checks for.
 func invalidPermissions(requested []string) []string {
 	var bad []string
 	for _, p := range requested {
@@ -30,9 +27,6 @@ func invalidPermissions(requested []string) []string {
 	return bad
 }
 
-// forbiddenResponse maps an *rpc.ForbiddenError to the same 403 shape
-// api.AuthPermission used to produce directly; every other error is the
-// caller's to handle.
 func forbiddenResponse(err error) (uapi.HttpResponse, bool) {
 	var forbidden *rpc.ForbiddenError
 	if errors.As(err, &forbidden) {

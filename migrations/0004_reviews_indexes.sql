@@ -1,13 +1,3 @@
--- Indexes for query patterns introduced by the reviews platform:
---
---   * listings is browsed by category and looked up by slug on every
---     GET /listings and GET /listings/{slug}.
---   * bots is filtered by `state` on the /queue Discord command and the
---     public bot list, same pattern the old bot_queue index covered.
---   * reviews is looked up per-subject (listing or bot) on every listing/bot
---     detail page, and per-author for a user's review history.
---   * reports/claims are worked from their open/pending queue in the staff
---     panel.
 
 CREATE INDEX IF NOT EXISTS idx_listings_category_id ON listings (category_id);
 CREATE INDEX IF NOT EXISTS idx_listings_status ON listings (status);

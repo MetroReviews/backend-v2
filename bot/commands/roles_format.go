@@ -16,8 +16,6 @@ func discordRoleValue(role types.Role) string {
 	return "_Panel-only — assigned by hand, not synced from Discord_"
 }
 
-// permissionsValue formats a role's permissions for an embed field, where
-// markdown renders.
 func permissionsValue(permissions []string) string {
 	if len(permissions) == 0 {
 		return "_None_"
@@ -32,8 +30,6 @@ func permissionsValue(permissions []string) string {
 	return strings.Join(sorted, ", ")
 }
 
-// permissionsSummary formats a role's permissions plainly, for UI slots
-// that don't render markdown (select option descriptions).
 func permissionsSummary(permissions []string) string {
 	if len(permissions) == 0 {
 		return "No permissions"

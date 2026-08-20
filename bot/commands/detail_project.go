@@ -10,8 +10,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// buildProjectDetailEmbed is buildBotDetailEmbed's counterpart for
-// projects — a business's posted portfolio items.
 func buildProjectDetailEmbed(projectID uuid.UUID) (*discordgo.MessageEmbed, types.State, error) {
 	var (
 		title, businessName  string

@@ -4,17 +4,18 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/MetroReviews/backend-v2/analytics"
 	"github.com/MetroReviews/backend-v2/api"
 	"github.com/MetroReviews/backend-v2/bot"
 	"github.com/MetroReviews/backend-v2/routes/actions"
 	authroutes "github.com/MetroReviews/backend-v2/routes/auth"
-	"github.com/MetroReviews/backend-v2/routes/bots"
 	"github.com/MetroReviews/backend-v2/routes/businesses"
 	"github.com/MetroReviews/backend-v2/routes/categories"
 	"github.com/MetroReviews/backend-v2/routes/panel"
 	"github.com/MetroReviews/backend-v2/routes/projects"
 	"github.com/MetroReviews/backend-v2/routes/reviews"
 	rolesroutes "github.com/MetroReviews/backend-v2/routes/roles"
+	"github.com/MetroReviews/backend-v2/routes/search"
 	"github.com/MetroReviews/backend-v2/routes/team"
 	webhookroutes "github.com/MetroReviews/backend-v2/routes/webhooks"
 	"github.com/MetroReviews/backend-v2/state"
@@ -30,7 +31,6 @@ import (
 var routers = []uapi.APIRouter{
 	authroutes.Router{},
 	businesses.Router{},
-	bots.Router{},
 	reviews.Router{},
 	categories.Router{},
 	actions.Router{},
@@ -39,6 +39,7 @@ var routers = []uapi.APIRouter{
 	rolesroutes.Router{},
 	projects.Router{},
 	webhookroutes.Router{},
+	search.Router{},
 }
 
 func main() {
@@ -69,6 +70,8 @@ func main() {
 
 	api.Setup()
 
+	go analytics.StartFlusher(state.Context)
+
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RealIP)
@@ -89,12 +92,9 @@ func main() {
 		}
 	})
 
-	// Human-facing rendering of /openapi. Redoc is loaded from its CDN by
-	// the browser that opens this page, not by the server — this handler
-	// itself stays a static, dependency-free HTML string.
 	r.Get("/docs", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(docsHTML)) //nolint:errcheck
+		w.Write([]byte(docsHTML))
 	})
 
 	state.Logger.Info("listening", zap.String("addr", state.Config.Server.BindAddr))
@@ -103,10 +103,6 @@ func main() {
 	}
 }
 
-// docsHTML renders /openapi with Redoc — a single <redoc> tag pointed at
-// the JSON endpoint above, plus its CDN-hosted bundle. No build step and
-// no assets to embed: the browser fetches both the schema and the
-// renderer itself at load time.
 const docsHTML = `<!doctype html>
 <html lang="en">
 <head>

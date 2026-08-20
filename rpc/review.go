@@ -16,21 +16,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// ReviewBot claims/unclaims/approves/denies botID on actor's behalf: the
-// single entry point routes/bots/action.go (HTTP) and
-// bot/commands/modal.go (Discord) both call, enforcing queue.review and
-// posting the outcome to the logs channel regardless of which surface
-// triggered it.
-func ReviewBot(ctx context.Context, actor Actor, botID int64, action types.Action, reason string) (review.Result, error) {
-	if err := authorize(ctx, actor, perms.QueueReview); err != nil {
-		return review.Result{}, err
-	}
-	res := review.ApplyBotAction(ctx, botID, action, reason, actor.UserID)
-	announceReviewAction(actor, "bot", strconv.FormatInt(botID, 10), action, reason, res)
-	return res, nil
-}
-
-// ReviewBusiness is ReviewBot's counterpart for businesses.
 func ReviewBusiness(ctx context.Context, actor Actor, businessID uuid.UUID, action types.Action, reason string) (review.Result, error) {
 	if err := authorize(ctx, actor, perms.QueueReview); err != nil {
 		return review.Result{}, err
@@ -40,8 +25,6 @@ func ReviewBusiness(ctx context.Context, actor Actor, businessID uuid.UUID, acti
 	return res, nil
 }
 
-// ReviewProject is ReviewBot's counterpart for projects — a business's
-// posted portfolio items, which go through the same queue.
 func ReviewProject(ctx context.Context, actor Actor, projectID uuid.UUID, action types.Action, reason string) (review.Result, error) {
 	if err := authorize(ctx, actor, perms.QueueReview); err != nil {
 		return review.Result{}, err
@@ -51,9 +34,6 @@ func ReviewProject(ctx context.Context, actor Actor, projectID uuid.UUID, action
 	return res, nil
 }
 
-// reviewActionNames and subjectLabels give the human labels an audit embed
-// needs — small, local lookup tables, same style as the maps
-// bot/commands/queue.go and modal.go keep for their own embeds.
 var reviewActionNames = map[types.Action]string{
 	types.ActionClaim:   "Claim",
 	types.ActionUnclaim: "Unclaim",
@@ -61,13 +41,8 @@ var reviewActionNames = map[types.Action]string{
 	types.ActionDeny:    "Deny",
 }
 
-var reviewSubjectLabels = map[string]string{"bot": "Bot", "business": "Business", "project": "Project"}
+var reviewSubjectLabels = map[string]string{"business": "Business", "project": "Project"}
 
-// announceReviewAction posts a record of a claim/unclaim/approve/deny to
-// the configured logs channel — a no-op if Discord isn't connected or no
-// logs channel is configured. Runs off state.Discord directly rather than
-// a caller-supplied session, so it fires the same way whether the action
-// came from the API or from Discord.
 func announceReviewAction(actor Actor, subjectType, id string, action types.Action, reason string, res review.Result) {
 	if state.Discord == nil || state.Config.LogsChannelID() == 0 {
 		return
@@ -87,9 +62,9 @@ func announceReviewAction(actor Actor, subjectType, id string, action types.Acti
 		fields = append(fields, &discordgo.MessageEmbedField{Name: "Reason", Value: helpers.Truncate(reason, 1024)})
 	}
 
-	title, color := "✅ "+res.Message, 0x57f287 // green
+	title, color := "✅ "+res.Message, 0x57f287
 	if !res.OK {
-		title, color = "❌ "+res.Message, 0xed4245 // red
+		title, color = "❌ "+res.Message, 0xed4245
 	}
 	fields = append(fields, &discordgo.MessageEmbedField{Name: "Result", Value: title})
 

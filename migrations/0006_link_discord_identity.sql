@@ -1,13 +1,3 @@
--- Decouple identity from Discord: a Metro user is now its own row with its
--- own id, and a Discord account links to it via discord_accounts instead
--- of the Discord snowflake being the user's primary key. This also lets a
--- future login method link into the same user without a schema change, and
--- lets bot/listing reviewers resolve to a real user row even when they've
--- only ever interacted through the Discord bot (see the identity package),
--- which is what 0005's FK-drop was really working around.
---
--- Fresh rebuild, same as 0003/0004: this is all dev/seed data, nothing here
--- has ever needed to be preserved across a schema change.
 
 DROP TABLE IF EXISTS moderation_actions;
 DROP TABLE IF EXISTS review_votes;
@@ -28,26 +18,17 @@ CREATE TABLE users (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- One row per linked external account. Discord is the only provider today,
--- but nothing else in the schema references Discord IDs directly for
--- identity purposes anymore — everything points at users(id) — so adding
--- e.g. a github_accounts table later needs no further changes elsewhere.
 CREATE TABLE discord_accounts (
     discord_id         BIGINT PRIMARY KEY,
     user_id            UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-    nonce              TEXT,          -- short-lived OAuth ticket nonce (routes/panel)
-    session_token      TEXT,          -- long-lived API bearer session (api.AuthUser)
+    nonce              TEXT,
+    session_token      TEXT,
     session_expires_at TIMESTAMPTZ,
     linked_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_discord_accounts_user_id ON discord_accounts (user_id);
 CREATE INDEX idx_discord_accounts_session_token ON discord_accounts (session_token);
 
--- Metro's own Discord bot list. owner/extra_owners stay plain Discord IDs
--- deliberately: they describe who owns the *Discord bot*, which doesn't
--- require that person to have ever created a Metro account. reviewer is a
--- real user (identity.EnsureDiscordUser resolves the claiming staffer's
--- Discord ID to one before it's ever written here).
 CREATE TABLE bots (
     bot_id           BIGINT PRIMARY KEY,
     username         TEXT NOT NULL,

@@ -41,7 +41,7 @@ func Setup() {
 		ErrorStruct: types.ApiError{},
 		Info: docs.Info{
 			Title:       "Metro Reviews API",
-			Description: "The API powering Metro Reviews: reviews and ratings for any listed service or business, plus Metro's own Discord bot list.",
+			Description: "The API powering Metro Reviews: reviews and ratings for any showcased business, company or organization and its products or menu.",
 			Version:     "7.0",
 			Contact: docs.Contact{
 				Name: "Purrquinox",

@@ -16,18 +16,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// SyncMember reconciles userID's assignment to every Discord-linked role
-// against heldDiscordRoleIDs (a guild member's current Roles), then
-// refreshes users.is_staff from the resulting permission set. Panel-only
-// role assignments (no linked Discord role) are untouched.
-//
-// discordID is that same user's Discord ID: a config.yaml owner bypasses
-// the permissions system entirely, so is_staff is forced true for them
-// regardless of what roles (if any) they hold or are even configured yet.
-// It's also used to report the change (if any) to the configured logs
-// channel — see postRoleSyncLog. Most calls are no-ops (a login or profile
-// update for someone whose linked roles didn't actually change), which
-// aren't logged.
 func SyncMember(ctx context.Context, userID uuid.UUID, discordID int64, heldDiscordRoleIDs []string) error {
 	linked, err := linkedRoles(ctx)
 	if err != nil {
@@ -50,7 +38,7 @@ func SyncMember(ctx context.Context, userID uuid.UUID, discordID int64, heldDisc
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck // no-op once committed
+	defer tx.Rollback(ctx)
 
 	for _, role := range linked {
 		if held[role.ID] {
@@ -105,9 +93,6 @@ func SyncMember(ctx context.Context, userID uuid.UUID, discordID int64, heldDisc
 	return nil
 }
 
-// assignedLinkedRoleIDs returns which of userID's currently-assigned roles
-// are Discord-linked — SyncMember's "before" snapshot, compared against
-// the "after" set once it's done reconciling.
 func assignedLinkedRoleIDs(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]bool, error) {
 	rows, err := state.Pool.Query(ctx, `
 		SELECT ur.role_id FROM user_roles ur
@@ -129,10 +114,6 @@ func assignedLinkedRoleIDs(ctx context.Context, userID uuid.UUID) (map[uuid.UUID
 	return out, rows.Err()
 }
 
-// diffRoleNames compares a linked-role assignment snapshot from before a
-// sync to the set applied after, returning the role names added/removed.
-// changed is false (added/removed both nil) when the sets are identical —
-// the common case, and the caller's cue not to log anything.
 func diffRoleNames(before, after map[uuid.UUID]bool, linked map[string]types.Role) (added, removed []string, changed bool) {
 	names := make(map[uuid.UUID]string, len(linked))
 	for _, role := range linked {
@@ -154,10 +135,6 @@ func diffRoleNames(before, after map[uuid.UUID]bool, linked map[string]types.Rol
 	return added, removed, changed
 }
 
-// postRoleSyncLog reports one member's role change to the configured logs
-// channel — the role-sync equivalent of bot/commands/result.go's
-// logAction for review actions. A no-op if the bot isn't connected or no
-// logs channel is configured.
 func postRoleSyncLog(discordID int64, added, removed, currentRoles, currentPerms []string) {
 	if state.Discord == nil || state.Config.LogsChannelID() == 0 {
 		return
@@ -197,10 +174,6 @@ func joinOrNone(items []string) string {
 	return strings.Join(items, ", ")
 }
 
-// SyncGuild reconciles every user's Discord-linked role assignments
-// against the guild's actual current membership: a full pass, in contrast
-// to SyncMember's single-user incremental update. It's a no-op if no role
-// is Discord-linked yet.
 func SyncGuild(ctx context.Context, s *discordgo.Session, guildID uint64) error {
 	linked, err := linkedRoles(ctx)
 	if err != nil {
@@ -248,9 +221,6 @@ func SyncGuild(ctx context.Context, s *discordgo.Session, guildID uint64) error 
 		}
 	}
 
-	// Revoke from anyone previously assigned a linked role who wasn't seen
-	// holding one above — they lost the Discord role, or left the guild
-	// entirely (GuildMembers only returns current members).
 	rows, err := state.Pool.Query(ctx, `
 		SELECT DISTINCT da.discord_id, ur.user_id
 		FROM user_roles ur
@@ -280,7 +250,7 @@ func SyncGuild(ctx context.Context, s *discordgo.Session, guildID uint64) error 
 
 	for _, a := range previous {
 		if _, ok := held[a.discordID]; ok {
-			continue // already reconciled with their current role set above
+			continue
 		}
 		if err := SyncMember(ctx, a.userID, a.discordID, nil); err != nil {
 			return err

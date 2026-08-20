@@ -10,8 +10,12 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/go-playground/validator/v10"
 	"github.com/infinitybotlist/eureka/genconfig"
+	"github.com/infinitybotlist/eureka/hotcache"
+	redishc "github.com/infinitybotlist/eureka/hotcache/redis"
+	"github.com/infinitybotlist/eureka/ratelimit"
 	"github.com/infinitybotlist/eureka/snippets"
 	"github.com/jackc/pgx/v5/pgxpool"
+	goredis "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 )
@@ -26,6 +30,10 @@ var (
 	Logger *zap.Logger
 
 	Validator *validator.Validate
+
+	Redis *goredis.Client
+
+	Cache hotcache.HotCache[string]
 
 	Context = context.Background()
 )
@@ -54,17 +62,7 @@ func Setup() error {
 	if err != nil {
 		return err
 	}
-	// Explicit sizing instead of pgx's defaults (MaxConns = 4x CPU cores,
-	// MinConns = 0): a MinConns floor keeps connections warm so a burst of
-	// traffic after idle time doesn't pay full connection-establishment
-	// latency, and MaxConnLifetime/MaxConnIdleTime recycle connections
-	// instead of holding them open indefinitely.
-	//
-	// The struct tag defaults below (20/2) only apply to the generated
-	// config.yaml.sample, not to an existing config.yaml that predates
-	// these fields — falling back here too means a config.yaml missing
-	// them gets the same sane pool instead of pgxpool panicking on
-	// MaxConns=0 ("MaxSize must be >= 1").
+
 	maxConns := Config.Database.MaxConns
 	if maxConns <= 0 {
 		maxConns = 20
@@ -88,6 +86,35 @@ func Setup() error {
 	if err := migrations.Apply(Context, Pool); err != nil {
 		return err
 	}
+
+	if err := setupRedis(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func setupRedis() error {
+	if Config.Redis.URL == "" {
+		Logger.Warn("no redis URL configured; running without response caching or rate limiting")
+		return nil
+	}
+
+	opts, err := goredis.ParseURL(Config.Redis.URL)
+	if err != nil {
+		return err
+	}
+	Redis = goredis.NewClient(opts)
+
+	if err := Redis.Ping(Context).Err(); err != nil {
+		return err
+	}
+
+	Cache = redishc.RedisHotCache[string]{Redis: Redis, Prefix: "cache:"}
+
+	ratelimit.SetupState(&ratelimit.RLState{
+		HotCache: redishc.RedisHotCache[int]{Redis: Redis, Prefix: "ratelimit:"},
+	})
 
 	return nil
 }

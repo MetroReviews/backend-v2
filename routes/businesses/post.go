@@ -28,6 +28,11 @@ func postBusiness(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 		metadata = map[string]any{}
 	}
 
+	gallery, ok := validateGallery(payload.Gallery)
+	if !ok {
+		return helpers.ErrorResponse(http.StatusBadRequest, "gallery URLs must be https:// and at most 12 images")
+	}
+
 	var categoryExists bool
 	if err := state.Pool.QueryRow(d.Context,
 		"SELECT EXISTS(SELECT 1 FROM categories WHERE id = $1)", payload.CategoryID,
@@ -38,17 +43,15 @@ func postBusiness(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 		return helpers.ErrorResponse(http.StatusBadRequest, "Unknown category_id")
 	}
 
-	// ON CONFLICT DO NOTHING RETURNING makes the slug uniqueness check
-	// atomic, same pattern used by POST /bots for bot_id.
 	rows, err := state.Pool.Query(d.Context, `
 		INSERT INTO businesses (
 			category_id, slug, name, description, website, logo, banner,
-			address, city, country, metadata, submitted_by
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			address, city, country, metadata, submitted_by, latitude, longitude, gallery
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		ON CONFLICT (slug) DO NOTHING
 		RETURNING `+businessColumns,
 		payload.CategoryID, payload.Slug, payload.Name, payload.Description, payload.Website, payload.Logo, payload.Banner,
-		payload.Address, payload.City, payload.Country, metadata, user.ID,
+		payload.Address, payload.City, payload.Country, metadata, user.ID, payload.Latitude, payload.Longitude, gallery,
 	)
 	if err != nil {
 		return helpers.InternalError(err)

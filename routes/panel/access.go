@@ -70,13 +70,6 @@ func getPanelAccess(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 	}}
 }
 
-// isStaffMember reports whether the given Discord user ID is a configured
-// owner or currently holds a Discord role that grants the panel.access
-// permission (see the perms/roles packages) in the main guild — Metro's
-// definition of "staff" for both the staff panel gate and the users.is_staff
-// column minted on login. It re-checks live against Discord rather than
-// trusting the DB's possibly-stale is_staff, since this runs at the moment
-// panel access is actually granted.
 func isStaffMember(ctx context.Context, userID string) bool {
 	id, err := strconv.ParseInt(userID, 10, 64)
 	if err != nil {

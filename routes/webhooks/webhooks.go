@@ -1,9 +1,3 @@
-// Package webhooks exposes the /webhooks endpoints: registering, managing
-// and testing outbound event subscriptions against any target (a bot, a
-// business, a project, or whatever's added next — see the webhooks
-// package this wraps). Handlers are split one concern per file; this file
-// just wires routing plus the shared authorization helpers every handler
-// goes through.
 package webhooks
 
 import (
@@ -25,17 +19,13 @@ const tagName = "Webhooks"
 type Router struct{}
 
 func (Router) Tag() (string, string) {
-	return tagName, "Outbound event subscriptions, registered against a bot, a business, a project, or whatever's added next."
+	return tagName, "Outbound event subscriptions, registered against a business, a project, or whatever's added next."
 }
 
 func (Router) Routes(r *chi.Mux) {
 	registerRoutes(r)
 }
 
-// authorizeTarget is the shared gate for creating/listing webhooks against
-// a target the caller names directly (as opposed to one already loaded
-// from an existing webhook row — see authorizeWebhook): a logged-in user
-// who either owns targetType/targetID (see svc.OwnsTarget) or is staff.
 func authorizeTarget(d uapi.RouteData, r *http.Request, targetType, targetID string) (*types.User, *uapi.HttpResponse) {
 	user, resp := api.AuthUser(d.Context, r)
 	if resp != nil {
@@ -56,10 +46,6 @@ func authorizeTarget(d uapi.RouteData, r *http.Request, targetType, targetID str
 	return user, nil
 }
 
-// authorizeWebhook is authorizeTarget for routes keyed by an existing
-// webhook's {id} — loads it once and checks ownership of *its* target, so
-// callers get both the authenticated user and the webhook without a
-// second query.
 func authorizeWebhook(d uapi.RouteData, r *http.Request) (*types.User, *types.Webhook, *uapi.HttpResponse) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
@@ -97,8 +83,6 @@ func authorizeWebhook(d uapi.RouteData, r *http.Request) (*types.User, *types.We
 	return user, hook, nil
 }
 
-// invalidEvents returns every entry in requested that isn't in svc's
-// catalog, for rejecting typos up front.
 func invalidEvents(requested []string) []string {
 	var bad []string
 	for _, e := range requested {

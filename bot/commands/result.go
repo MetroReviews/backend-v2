@@ -13,8 +13,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// actionNames gives the human label for a review action, used in both the
-// modal title and the logs-channel entry.
 var actionNames = map[types.Action]string{
 	types.ActionClaim:   "Claim",
 	types.ActionUnclaim: "Unclaim",
@@ -22,23 +20,18 @@ var actionNames = map[types.Action]string{
 	types.ActionDeny:    "Deny",
 }
 
-// resultTitle summarizes a review.Result as an embed title/color, shared by
-// the reviewer-facing result embed and the logs-channel entry.
 func resultTitle(res review.Result) (title string, color int) {
 	if !res.OK {
-		return "❌ " + res.Message, 0xed4245 // red
+		return "❌ " + res.Message, 0xed4245
 	}
-	return "✅ " + res.Message, 0x57f287 // green
+	return "✅ " + res.Message, 0x57f287
 }
 
-// buildResultEmbed turns a review.Result into a clean status embed.
 func buildResultEmbed(res review.Result) *discordgo.MessageEmbed {
 	title, color := resultTitle(res)
 	return &discordgo.MessageEmbed{Title: title, Color: color}
 }
 
-// logAction posts a record of a claim/unclaim/approve/deny to the
-// configured logs channel. No-op if logs_channel isn't configured.
 func logAction(s *discordgo.Session, action types.Action, subjectType, id string, reviewerID int64, reason string, res review.Result) {
 	channelID := state.Config.LogsChannelID()
 	if channelID == 0 {

@@ -7,6 +7,9 @@ type Config struct {
 	Server   Server   `yaml:"server"`
 	Database Database `yaml:"database"`
 	Auth     Auth     `yaml:"auth"`
+	Redis    Redis    `yaml:"redis"`
+	SMTP     SMTP     `yaml:"smtp"`
+	OpenAI   OpenAI   `yaml:"openai"`
 }
 
 type Discord struct {
@@ -35,6 +38,22 @@ type Database struct {
 	PostgresURL string `yaml:"postgres_url" default:"postgres:///brc" comment:"e.g. postgres:///brc"`
 	MaxConns    int32  `yaml:"max_conns" default:"20" comment:"Max open connections in the Postgres pool"`
 	MinConns    int32  `yaml:"min_conns" default:"2" comment:"Min idle connections kept warm in the Postgres pool"`
+}
+
+type Redis struct {
+	URL string `yaml:"url" default:"" comment:"Redis connection URL (e.g. redis://localhost:6379/0); caching and rate limiting are disabled if empty" required:"false"`
+}
+
+type SMTP struct {
+	Host string `yaml:"host" default:"" comment:"SMTP server host; invitation emails are logged instead of sent if empty" required:"false"`
+	Port int    `yaml:"port" default:"587" comment:"SMTP server port" required:"false"`
+	User string `yaml:"user" default:"" comment:"SMTP auth username" required:"false"`
+	Pass string `yaml:"pass" default:"" comment:"SMTP auth password" required:"false"`
+	From string `yaml:"from" default:"" comment:"From address for outgoing mail, e.g. reviews@example.com" required:"false"`
+}
+
+type OpenAI struct {
+	APIKey string `yaml:"api_key" default:"" comment:"OpenAI API key; review text is screened with the Moderation API before publishing, and skipped entirely if empty" required:"false"`
 }
 
 func parseID(s string) uint64 {

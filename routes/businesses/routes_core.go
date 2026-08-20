@@ -1,6 +1,3 @@
-// Core CRUD route registration for /businesses — GET/POST/PATCH, matching
-// get.go/post.go/update.go. Review-queue and ownership-claim route
-// registration lives in businesses_review_routes.go, matching review.go/claim.go.
 package businesses
 
 import (
@@ -57,7 +54,7 @@ func registerCoreRoutes(r *chi.Mux) {
 		Docs: func() *docs.Doc {
 			return &docs.Doc{
 				Summary:     "Add Business",
-				Description: "Submits a new business for review. Requires a logged-in user session. Goes through the same staff claim/approve/deny queue as bots (see /businesses/{id}/review/*) before it's publicly visible.",
+				Description: "Submits a new business for review. Requires a logged-in user session. Goes through the same staff claim/approve/deny queue as projects (see /businesses/{id}/review/*) before it's publicly visible.",
 				Req:         types.BusinessCreate{},
 				Resp:        types.Business{},
 			}

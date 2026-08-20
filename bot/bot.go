@@ -1,7 +1,3 @@
-// Package bot runs the Metro Reviews Discord bot session. It only wires
-// the session up and forwards events to the bot/commands package, which
-// holds every slash command, the /queue review UI, and the legacy prefix
-// commands (one file per command).
 package bot
 
 import (
@@ -26,7 +22,6 @@ func Setup() error {
 
 	s.AddHandler(onReady)
 	s.AddHandler(onInteraction)
-	s.AddHandler(commands.HandleMessage)
 	s.AddHandler(onGuildMemberAdd)
 	s.AddHandler(onGuildMemberUpdate)
 
@@ -52,11 +47,6 @@ func onReady(s *discordgo.Session, _ *discordgo.Ready) {
 		state.Logger.Error("[bot] failed to register guild commands", zap.Error(err))
 	}
 
-	// Full role-permission reconcile against the guild's current
-	// membership, in the background — incremental syncMemberRoles calls
-	// (below) keep it current after this, so this is really just catching
-	// up on anything that changed while the bot was offline. Same trigger
-	// as the /syncroles command.
 	go func() {
 		if err := roles.SyncGuild(state.Context, s, state.Config.GuildID()); err != nil {
 			state.Logger.Error("[bot] initial role sync failed", zap.Error(err))
@@ -91,13 +81,6 @@ func onGuildMemberUpdate(_ *discordgo.Session, m *discordgo.GuildMemberUpdate) {
 	go syncMemberRoles(m.Member)
 }
 
-// syncMemberRoles reconciles one guild member's role-based permissions
-// (see the roles package) after a join or a role/profile change. It only
-// provisions a Metro user for a member who doesn't have one yet if they
-// currently hold a Discord-linked role — a plain nickname/avatar change on
-// someone with no such role and no account shouldn't mint a throwaway one,
-// but someone who already has an account still needs reconciling in case
-// they just lost a linked role.
 func syncMemberRoles(m *discordgo.Member) {
 	if m == nil || m.User == nil {
 		return

@@ -1,29 +1,21 @@
 package commands
 
 import (
-	"fmt"
 	"sort"
-	"strconv"
-	"strings"
 
 	"github.com/MetroReviews/backend-v2/state"
 	"github.com/MetroReviews/backend-v2/types"
 )
 
-// fetchQueueEntries loads one subject type's queue (bot/business/project,
-// per filter): pending/under_review only, unless showAll requests every
-// state. Falls back to the bot queue for an unrecognized filter.
 func fetchQueueEntries(showAll bool, filter string) ([]queueEntry, error) {
 	var out []queueEntry
 	var err error
 
 	switch filter {
-	case "business":
-		out, err = fetchBusinessEntries(showAll)
 	case "project":
 		out, err = fetchProjectEntries(showAll)
 	default:
-		out, err = fetchBotEntries(showAll)
+		out, err = fetchBusinessEntries(showAll)
 	}
 	if err != nil {
 		return nil, err
@@ -37,37 +29,6 @@ func fetchQueueEntries(showAll bool, filter string) ([]queueEntry, error) {
 	})
 
 	return out, nil
-}
-
-func fetchBotEntries(showAll bool) ([]queueEntry, error) {
-	query := "SELECT bot_id, username, owner, tags, state FROM bots"
-	var args []any
-	if !showAll {
-		query += " WHERE state = $1 OR state = $2"
-		args = []any{types.StatePending, types.StateUnderReview}
-	}
-
-	rows, err := state.Pool.Query(state.Context, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var out []queueEntry
-	for rows.Next() {
-		var botID, owner int64
-		var username string
-		var tags []string
-		var st types.State
-		if err := rows.Scan(&botID, &username, &owner, &tags, &st); err != nil {
-			continue
-		}
-		out = append(out, queueEntry{
-			subjectType: "bot", id: strconv.FormatInt(botID, 10), name: username,
-			submittedBy: fmt.Sprintf("<@%d>", owner), extra: strings.Join(tags, ", "), state: st,
-		})
-	}
-	return out, rows.Err()
 }
 
 func fetchBusinessEntries(showAll bool) ([]queueEntry, error) {

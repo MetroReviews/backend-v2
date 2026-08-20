@@ -2,6 +2,7 @@ package reviews
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/MetroReviews/backend-v2/api"
 	"github.com/MetroReviews/backend-v2/helpers"
@@ -12,8 +13,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// postReport files a report against targetType ("review", "business" or
-// "bot"), reading the target's ID from the {id} path param.
 func postReport(d uapi.RouteData, r *http.Request, targetType string) uapi.HttpResponse {
 	targetID := chi.URLParam(r, "id")
 	if targetID == "" {
@@ -22,6 +21,9 @@ func postReport(d uapi.RouteData, r *http.Request, targetType string) uapi.HttpR
 
 	user, resp := api.AuthUser(d.Context, r)
 	if resp != nil {
+		return *resp
+	}
+	if resp := helpers.RateLimit(r, "report-create", 20, time.Hour); resp != nil {
 		return *resp
 	}
 

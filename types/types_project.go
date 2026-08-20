@@ -6,9 +6,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// Project is a portfolio/showcase item a business posts — past work shown
-// on its profile. Goes through the same claim/approve/deny review queue as
-// a new business or bot before it's public (see review/action.go).
 type Project struct {
 	ID          uuid.UUID  `db:"id" json:"id" description:"The project's ID"`
 	BusinessID  uuid.UUID  `db:"business_id" json:"business_id" description:"The business this project belongs to"`

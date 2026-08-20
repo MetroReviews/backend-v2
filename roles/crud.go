@@ -11,7 +11,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// List returns every role, alphabetically.
 func List(ctx context.Context) ([]types.Role, error) {
 	rows, err := state.Pool.Query(ctx, "SELECT "+roleColumns+" FROM roles ORDER BY name")
 	if err != nil {
@@ -20,12 +19,10 @@ func List(ctx context.Context) ([]types.Role, error) {
 	return pgx.CollectRows(rows, pgx.RowToStructByName[types.Role])
 }
 
-// Get returns a single role by ID.
 func Get(ctx context.Context, id uuid.UUID) (*types.Role, error) {
 	return scanRole(state.Pool.QueryRow(ctx, "SELECT "+roleColumns+" FROM roles WHERE id = $1", id))
 }
 
-// Create makes a new role. discordRoleID may be nil for a panel-only role.
 func Create(ctx context.Context, name string, discordRoleID *int64, permissions []string) (*types.Role, error) {
 	if permissions == nil {
 		permissions = []string{}
@@ -37,10 +34,6 @@ func Create(ctx context.Context, name string, discordRoleID *int64, permissions 
 	))
 }
 
-// Update patches a role. name and permissions are left unchanged when nil;
-// discordRoleID follows the same rule unless unlinkDiscordRole is set, which
-// clears it regardless (there's no other way to express "remove" through a
-// nilable field).
 func Update(ctx context.Context, id uuid.UUID, name *string, discordRoleID *int64, unlinkDiscordRole bool, permissions []string) (*types.Role, error) {
 	var setClauses []string
 	var args []any
@@ -73,7 +66,6 @@ func Update(ctx context.Context, id uuid.UUID, name *string, discordRoleID *int6
 	return scanRole(state.Pool.QueryRow(ctx, query, args...))
 }
 
-// Delete removes a role outright, along with every user's assignment to it.
 func Delete(ctx context.Context, id uuid.UUID) error {
 	_, err := state.Pool.Exec(ctx, "DELETE FROM roles WHERE id = $1", id)
 	return err

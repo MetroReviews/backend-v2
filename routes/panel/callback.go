@@ -17,11 +17,6 @@ import (
 	"github.com/infinitybotlist/eureka/uapi"
 )
 
-// sessionTTL is how long a minted session_token stays valid for general API
-// use (POST review/business/claim, ...) — much longer than the 30-minute
-// nonce ticket, which only gates the one-time staff panel handshake.
-const sessionTTL = 30 * 24 * time.Hour
-
 func completeOAuth2(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 	code := r.URL.Query().Get("code")
 	redirectState := r.URL.Query().Get("state")
@@ -75,12 +70,9 @@ func completeOAuth2(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 	}
 
 	nonce := crypto.RandString(43) + "@" + strconv.FormatFloat(float64(time.Now().UnixNano())/1e9, 'f', -1, 64)
-	sessionToken := crypto.RandString(64)
 
 	discordID, _ := strconv.ParseInt(user.ID, 10, 64)
 
-	// find-or-create the Metro user this Discord account links to, then
-	// sync its profile fields and mint this login's session on the link.
 	metroUserID, err := identity.EnsureDiscordUser(d.Context, discordID, user.Username)
 	if err != nil {
 		return helpers.InternalError(err)
@@ -93,11 +85,6 @@ func completeOAuth2(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 		return helpers.InternalError(err)
 	}
 
-	// Sync this login's Discord roles into the permissions system (see the
-	// roles package) — this is what sets/clears is_staff, so it must run
-	// before the ticket returned below is ever checked against it. A
-	// configured owner gets is_staff regardless of role membership, or even
-	// whether the bot's in the guild yet — SyncMember itself handles that.
 	var memberRoles []string
 	if state.Discord != nil {
 		gid := strconv.FormatUint(state.Config.GuildID(), 10)
@@ -109,11 +96,14 @@ func completeOAuth2(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 		return helpers.InternalError(err)
 	}
 
-	if _, err := state.Pool.Exec(d.Context, `
-		UPDATE discord_accounts SET nonce = $1, session_token = $2, session_expires_at = NOW() + $3
-		WHERE discord_id = $4`,
-		nonce, sessionToken, sessionTTL, discordID,
+	if _, err := state.Pool.Exec(d.Context,
+		"UPDATE discord_accounts SET nonce = $1 WHERE discord_id = $2", nonce, discordID,
 	); err != nil {
+		return helpers.InternalError(err)
+	}
+
+	sessionToken, _, err := identity.NewSession(d.Context, metroUserID)
+	if err != nil {
 		return helpers.InternalError(err)
 	}
 

@@ -7,12 +7,17 @@ import (
 	"github.com/google/uuid"
 	"github.com/infinitybotlist/eureka/crypto"
 	"github.com/jackc/pgx/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
-// seedUsers seeds a Metro user plus its linked Discord account for each
-// fixture identity, mirroring what identity.EnsureDiscordUser +
-// routes/panel/callback.go would produce on a real login.
+const seedPassword = "password123"
+
 func seedUsers(ctx context.Context, tx pgx.Tx) error {
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(seedPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash seed password: %w", err)
+	}
+
 	users := []struct {
 		id        uuid.UUID
 		discordID int64
@@ -34,15 +39,42 @@ func seedUsers(ctx context.Context, tx pgx.Tx) error {
 			return fmt.Errorf("user %s: %w", u.username, err)
 		}
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO discord_accounts (discord_id, user_id, nonce, session_token, session_expires_at)
-			VALUES ($1, $2, $3, $4, NOW() + interval '30 days')
-			ON CONFLICT (discord_id) DO UPDATE SET
-				nonce = EXCLUDED.nonce, session_token = EXCLUDED.session_token,
-				session_expires_at = EXCLUDED.session_expires_at`,
-			u.discordID, u.id, crypto.RandString(20), crypto.RandString(43),
+			INSERT INTO discord_accounts (discord_id, user_id, nonce)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (discord_id) DO UPDATE SET nonce = EXCLUDED.nonce`,
+			u.discordID, u.id, crypto.RandString(20),
 		); err != nil {
 			return fmt.Errorf("discord account for %s: %w", u.username, err)
 		}
 	}
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO local_accounts (user_id, email, password_hash)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (user_id) DO UPDATE SET
+			email = EXCLUDED.email, password_hash = EXCLUDED.password_hash, updated_at = NOW()`,
+		userAlphaID, "alpha_seed@example.com", string(passwordHash),
+	); err != nil {
+		return fmt.Errorf("local account link for alpha_seed: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO users (id, username, is_staff)
+		VALUES ($1, $2, FALSE)
+		ON CONFLICT (id) DO UPDATE SET username = EXCLUDED.username`,
+		userLocalID, "local_seed",
+	); err != nil {
+		return fmt.Errorf("user local_seed: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO local_accounts (user_id, email, password_hash)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (user_id) DO UPDATE SET
+			email = EXCLUDED.email, password_hash = EXCLUDED.password_hash, updated_at = NOW()`,
+		userLocalID, "local_seed@example.com", string(passwordHash),
+	); err != nil {
+		return fmt.Errorf("local account for local_seed: %w", err)
+	}
+
 	return nil
 }

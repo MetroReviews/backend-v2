@@ -1,10 +1,5 @@
 package types
 
-// Action, State: the shared moderation queue both bots and businesses go
-// through — claim it (start reviewing), then approve or deny — surfaced
-// together in the Discord /queue command. A submission stays PENDING until
-// a staff member claims it; SUSPENDED is for pulling something back down
-// after it was already approved (e.g. resolving a report against it).
 type Action int
 
 const (

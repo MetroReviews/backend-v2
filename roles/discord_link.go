@@ -10,11 +10,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// DiscordRoleIDsWithPermission returns the Discord role ID of every
-// Discord-linked role that grants want (directly or via the wildcard) —
-// the set of Discord roles that should count as holding want, for callers
-// that only have a guild member's role list to go on (the bot, and the
-// live re-check in routes/panel/access.go).
 func DiscordRoleIDsWithPermission(ctx context.Context, want string) ([]int64, error) {
 	rows, err := state.Pool.Query(ctx, `
 		SELECT discord_role_id FROM roles
@@ -38,10 +33,6 @@ func DiscordRoleIDsWithPermission(ctx context.Context, want string) ([]int64, er
 	return out, rows.Err()
 }
 
-// linkedRoles returns every Discord-linked role, keyed by its Discord role
-// ID as a string (matching discordgo's Member.Roles element type) — the
-// full row rather than just the local ID, since SyncMember also needs the
-// name to report what changed.
 func linkedRoles(ctx context.Context) (map[string]types.Role, error) {
 	rows, err := state.Pool.Query(ctx, "SELECT "+roleColumns+" FROM roles WHERE discord_role_id IS NOT NULL")
 	if err != nil {
@@ -59,9 +50,6 @@ func linkedRoles(ctx context.Context) (map[string]types.Role, error) {
 	return out, nil
 }
 
-// LinkedDiscordRoleIDs returns the Discord role ID (as strings) of every
-// role that has one linked, for a caller that just needs to test guild
-// member role IDs for membership without the full role rows.
 func LinkedDiscordRoleIDs(ctx context.Context) ([]string, error) {
 	linked, err := linkedRoles(ctx)
 	if err != nil {

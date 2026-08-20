@@ -18,21 +18,10 @@ import (
 	"go.uber.org/zap"
 )
 
-// maxConsecutiveFailures is how many deliveries in a row can fail before a
-// webhook is auto-disabled — protects a dead endpoint from being hammered
-// forever, and gives the owner a signal (Webhook.Enabled flips to false)
-// without this package needing a retry queue.
 const maxConsecutiveFailures = 10
 
 var httpClient = &http.Client{Timeout: 10 * time.Second}
 
-// Dispatch fires event for targetType/targetID with data as the payload's
-// "data" field, delivering to every enabled webhook registered for that
-// exact target whose Events list is empty (subscribed to everything) or
-// contains event. Looks up matching webhooks and delivers to each in the
-// background — never blocks the caller and never returns an error, since
-// a delivery failure is the receiving webhook's problem, not the
-// request's that triggered it.
 func Dispatch(targetType, targetID, event string, data any) {
 	go func() {
 		hooks, err := matchingWebhooks(state.Context, targetType, targetID, event)
@@ -55,11 +44,6 @@ func Dispatch(targetType, targetID, event string, data any) {
 	}()
 }
 
-// DispatchQueueAction fires the claim/unclaim/approve/deny event matching
-// action — the review queue's one dispatch call site, shared by every
-// subject type that goes through review.ApplyBotAction/ApplyBusinessAction
-// et al (see review/action.go's finishAction), so a future subject type
-// gets webhook events for free just by calling that same helper.
 func DispatchQueueAction(targetType, targetID string, action types.Action, reason string, reviewer uuid.UUID) {
 	event, ok := queueActionEvents[action]
 	if !ok {
@@ -74,10 +58,6 @@ func DispatchQueueAction(targetType, targetID string, action types.Action, reaso
 	})
 }
 
-// DeliverTest sends EventTest straight to hook, bypassing its Events
-// filter (a test ping isn't something you "subscribe" to), and returns
-// the delivery outcome synchronously so POST /webhooks/{id}/test can
-// report it back instead of firing blind.
 func DeliverTest(hook types.Webhook) error {
 	return deliver(hook, EventTest, hook.TargetType, hook.TargetID, map[string]any{
 		"message": "This is a test delivery from Metro Reviews.",
@@ -97,10 +77,6 @@ func matchingWebhooks(ctx context.Context, targetType, targetID, event string) (
 	return pgx.CollectRows(rows, pgx.RowToStructByName[types.Webhook])
 }
 
-// deliver POSTs one signed event to hook.URL. The body is signed with
-// HMAC-SHA256 over hook.Secret, sent as "sha256=<hex>" in
-// X-Metro-Signature — the receiver re-computes the same HMAC over the raw
-// body and compares to verify the delivery actually came from Metro.
 func deliver(hook types.Webhook, event, targetType, targetID string, data any) error {
 	deliveryID := uuid.NewString()
 

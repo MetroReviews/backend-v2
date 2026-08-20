@@ -18,7 +18,7 @@ const tagName = "Actions"
 type Router struct{}
 
 func (Router) Tag() (string, string) {
-	return tagName, "Review queue action history (claim/unclaim/approve/deny), for both bots and businesses."
+	return tagName, "Review queue action history (claim/unclaim/approve/deny), for both businesses and projects."
 }
 
 func (Router) Routes(r *chi.Mux) {
@@ -29,13 +29,13 @@ func (Router) Routes(r *chi.Mux) {
 		Docs: func() *docs.Doc {
 			return &docs.Doc{
 				Summary: "Get Actions",
-				Description: `Returns a list of review queue actions (claim/unclaim/approve/deny) taken on bots and businesses. Filter by ` + "`target_type`" + ` (` + "`bot`" + ` or ` + "`business`" + `).
+				Description: `Returns a list of review queue actions (claim/unclaim/approve/deny) taken on businesses and projects. Filter by ` + "`target_type`" + ` (` + "`business`" + ` or ` + "`project`" + `).
 
 Paginated using ` + "`limit`" + ` (max rows to return) and ` + "`offset`" + ` (rows to skip). Maximum limit is 200.`,
 				Resp:     []types.ModerationAction{},
 				RespName: "ModerationActionArray",
 				Params: []docs.Parameter{
-					{Name: "target_type", In: "query", Description: "Filter to bot or business actions only", Required: false, Schema: docs.IdSchema},
+					{Name: "target_type", In: "query", Description: "Filter to business or project actions only", Required: false, Schema: docs.IdSchema},
 					{Name: "offset", In: "query", Description: "Rows to skip (default 0)", Required: false, Schema: docs.IdSchema},
 					{Name: "limit", In: "query", Description: "Max rows to return (default 50, max 200)", Required: false, Schema: docs.IdSchema},
 				},
@@ -52,7 +52,7 @@ func getActions(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 
 	query := "SELECT id, target_type, target_id, action, reason, reviewer, action_time FROM moderation_actions"
 	args := []any{}
-	if targetType == "bot" || targetType == "business" {
+	if targetType == "business" || targetType == "project" {
 		args = append(args, targetType)
 		query += " WHERE target_type = $1"
 	}

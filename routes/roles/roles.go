@@ -1,10 +1,3 @@
-// Package roles exposes the panel's permissions system over HTTP: the
-// permission catalog, role CRUD, assigning/unassigning roles to users, and
-// a manual trigger for the Discord role sync that the bot otherwise runs
-// on its own (see the roles domain package). Handlers are split one
-// concern per file; route registration mirrors that split — permission
-// catalog/role CRUD here, membership/sync registration in
-// routes_members.go — this file just wires the two together.
 package roles
 
 import (

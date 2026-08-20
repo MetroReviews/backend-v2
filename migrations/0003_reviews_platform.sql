@@ -1,20 +1,8 @@
--- Pivot: Metro becomes a Yelp/Trustpilot-style review site for any listing,
--- plus its own standalone Discord bot list (no longer a federation hub).
---
--- Drops the list-federation tables (bot_list, bot_action) and the old
--- bot_queue in favor of a self-contained `bots` table, and adds the generic
--- review platform: categories, listings, reviews, review_votes, reports,
--- claims. No data is preserved from the old tables (fresh start, agreed
--- with product direction change).
 
 DROP TABLE IF EXISTS bot_action;
 DROP TABLE IF EXISTS bot_queue;
 DROP TABLE IF EXISTS bot_list;
 
--- users: was (user_id, nonce) only, used purely as an OAuth nonce store.
--- Becomes a real account: profile fields, staff/ban flags, and a long-lived
--- session token (see api.AuthUser) alongside the existing short-lived nonce
--- (still used by the staff panel ticket flow in routes/panel).
 ALTER TABLE users
     ADD COLUMN IF NOT EXISTS username           TEXT,
     ADD COLUMN IF NOT EXISTS avatar             TEXT,
@@ -33,13 +21,6 @@ CREATE TABLE categories (
     icon        TEXT
 );
 
--- Enum values (stored as integers):
---   State (shared by bots.state and listings.status — the review queue):
---     PENDING=0, UNDER_REVIEW=1, APPROVED=2, DENIED=3, SUSPENDED=4
---   ClaimStatus (ownership claims on a listing, unrelated to the review
---     queue above): PENDING=0, APPROVED=1, DENIED=2
---   ReviewStatus:  PUBLISHED=0, FLAGGED=1, REMOVED=2
---   ReportStatus:  OPEN=0, RESOLVED=1, DISMISSED=2
 
 CREATE TABLE listings (
     id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -50,24 +31,20 @@ CREATE TABLE listings (
     website       TEXT,
     logo          TEXT,
     banner        TEXT,
-    address       TEXT, -- nullable: not every listing is a physical place
+    address       TEXT,
     city          TEXT,
     country       TEXT,
-    metadata      JSONB NOT NULL DEFAULT '{}', -- category-specific extra fields
-    owner_id      BIGINT REFERENCES users (user_id), -- verified owner, set once an ownership claim is approved
+    metadata      JSONB NOT NULL DEFAULT '{}',
+    owner_id      BIGINT REFERENCES users (user_id),
     submitted_by  BIGINT NOT NULL REFERENCES users (user_id),
-    reviewer      BIGINT REFERENCES users (user_id), -- staff member who claimed it for review
-    status        INTEGER NOT NULL DEFAULT 0, -- State.PENDING — goes through the same review queue as bots
+    reviewer      BIGINT REFERENCES users (user_id),
+    status        INTEGER NOT NULL DEFAULT 0,
     avg_rating    NUMERIC(3,2) NOT NULL DEFAULT 0,
     review_count  INTEGER NOT NULL DEFAULT 0,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Metro's own Discord bot list. Same shape as the old bot_queue minus the
--- list-federation columns (list_source, cross_add), plus rating rollups.
--- owner/extra_owners are not FKed to users: a bot's owner is just a Discord
--- ID supplied at submission time and need never have logged in to Metro.
 CREATE TABLE bots (
     bot_id           BIGINT PRIMARY KEY,
     username         TEXT NOT NULL,
@@ -86,22 +63,18 @@ CREATE TABLE bots (
     invite_link      TEXT,
     owner            BIGINT NOT NULL,
     extra_owners     BIGINT[] NOT NULL DEFAULT '{}',
-    reviewer         BIGINT REFERENCES users (user_id), -- staff member who claimed/actioned it
-    state            INTEGER NOT NULL DEFAULT 0, -- State.PENDING (types.State, unchanged)
+    reviewer         BIGINT REFERENCES users (user_id),
+    state            INTEGER NOT NULL DEFAULT 0,
     avg_rating       NUMERIC(3,2) NOT NULL DEFAULT 0,
     review_count     INTEGER NOT NULL DEFAULT 0,
     added_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Review queue action audit log, shared by bots and listings (the same
--- claim/unclaim/approve/deny pipeline covers both — see the review
--- package). Was bot_action, generalized past just bots and minus
--- list_source (there's no longer any list to attribute the action to).
 CREATE TABLE moderation_actions (
     id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     target_type TEXT NOT NULL CHECK (target_type IN ('bot', 'listing')),
-    target_id   TEXT NOT NULL, -- a bot_id or a listing UUID, stored as text since the target type varies
-    action      INTEGER NOT NULL, -- Action (types.Action, unchanged)
+    target_id   TEXT NOT NULL,
+    action      INTEGER NOT NULL,
     reason      TEXT NOT NULL,
     reviewer    BIGINT NOT NULL REFERENCES users (user_id),
     action_time TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -118,12 +91,12 @@ CREATE TABLE reviews (
     owner_response    TEXT,
     owner_response_at TIMESTAMPTZ,
     helpful_count     INTEGER NOT NULL DEFAULT 0,
-    status            INTEGER NOT NULL DEFAULT 0, -- ReviewStatus.PUBLISHED
+    status            INTEGER NOT NULL DEFAULT 0,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CHECK ((listing_id IS NOT NULL) <> (bot_id IS NOT NULL)), -- exactly one subject
-    UNIQUE (listing_id, author_id), -- one review per user per listing
-    UNIQUE (bot_id, author_id)      -- one review per user per bot
+    CHECK ((listing_id IS NOT NULL) <> (bot_id IS NOT NULL)),
+    UNIQUE (listing_id, author_id),
+    UNIQUE (bot_id, author_id)
 );
 
 CREATE TABLE review_votes (
@@ -136,22 +109,21 @@ CREATE TABLE review_votes (
 CREATE TABLE reports (
     id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     target_type TEXT NOT NULL CHECK (target_type IN ('review', 'listing', 'bot')),
-    target_id   TEXT NOT NULL, -- a UUID or a bot_id, stored as text since the target type varies
+    target_id   TEXT NOT NULL,
     reporter_id BIGINT NOT NULL REFERENCES users (user_id),
     reason      TEXT NOT NULL,
-    status      INTEGER NOT NULL DEFAULT 0, -- ReportStatus.OPEN
+    status      INTEGER NOT NULL DEFAULT 0,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     resolved_by BIGINT REFERENCES users (user_id),
     resolved_at TIMESTAMPTZ
 );
 
--- Ownership claim requests on a listing.
 CREATE TABLE claims (
     id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     listing_id  UUID NOT NULL REFERENCES listings (id) ON DELETE CASCADE,
     user_id     BIGINT NOT NULL REFERENCES users (user_id),
     note        TEXT,
-    status      INTEGER NOT NULL DEFAULT 0, -- ClaimStatus.PENDING
+    status      INTEGER NOT NULL DEFAULT 0,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     resolved_by BIGINT REFERENCES users (user_id),
     resolved_at TIMESTAMPTZ

@@ -13,10 +13,6 @@ import (
 	"github.com/infinitybotlist/eureka/uapi"
 )
 
-// reviewAction handles the /projects/{id}/review/* endpoints: the same
-// claim/unclaim/approve/deny queue bots and businesses go through (see
-// routes/bots/action.go, routes/businesses/review.go and the rpc package,
-// which all three — plus the Discord bot's /queue — call through).
 func reviewAction(d uapi.RouteData, r *http.Request, action types.Action) uapi.HttpResponse {
 	projectID, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {

@@ -36,7 +36,7 @@ func registerRoutes(r *chi.Mux) {
 				Resp:        []types.Webhook{},
 				RespName:    "WebhookArray",
 				Params: []docs.Parameter{
-					{Name: "target_type", In: "query", Description: "The target's type: bot, business, project, ...", Required: true, Schema: docs.IdSchema},
+					{Name: "target_type", In: "query", Description: "The target's type: business, project, ...", Required: true, Schema: docs.IdSchema},
 					{Name: "target_id", In: "query", Description: "The target's ID", Required: true, Schema: docs.IdSchema},
 				},
 			}

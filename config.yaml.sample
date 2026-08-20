@@ -20,3 +20,16 @@ auth:
   allowed_host:  # admin/host, e.g. catnip.metrobots.xyz (optional)
   oauth_redirect:  # frostpaw redirect URI (optional)
   default_login_state:  # fallback panel origin (optional)
+
+redis:
+  url:  # Redis connection URL (e.g. redis://localhost:6379/0); caching and rate limiting are disabled if empty (optional)
+
+smtp:
+  host:  # SMTP server host; invitation emails are logged instead of sent if empty (optional)
+  port: 587 # SMTP server port (optional)
+  user:  # SMTP auth username (optional)
+  pass:  # SMTP auth password (optional)
+  from:  # From address for outgoing mail, e.g. reviews@example.com (optional)
+
+openai:
+  api_key:  # OpenAI API key; review text is screened with the Moderation API before publishing, and skipped entirely if empty (optional)

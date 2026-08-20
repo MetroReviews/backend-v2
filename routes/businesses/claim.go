@@ -1,8 +1,3 @@
-// Ownership claims: a user asserting "this business is mine", resolved by
-// staff (see /businesses/{id}/claims/{claim_id}/approve|deny below). This is
-// unrelated to the review queue's claim/unclaim/approve/deny in review.go —
-// that's staff claiming a *submission* to review it, this is a user
-// claiming *ownership* of an already-published business.
 package businesses
 
 import (
@@ -63,8 +58,6 @@ func postClaim(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 	return uapi.HttpResponse{Json: claim}
 }
 
-// resolveClaim approves or denies a pending claim. On approval, it sets the
-// business's verified owner to the claimant in the same transaction.
 func resolveClaim(d uapi.RouteData, r *http.Request, outcome types.ClaimStatus) uapi.HttpResponse {
 	businessID, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
@@ -99,7 +92,7 @@ func resolveClaim(d uapi.RouteData, r *http.Request, outcome types.ClaimStatus) 
 	if err != nil {
 		return helpers.InternalError(err)
 	}
-	defer tx.Rollback(d.Context) //nolint:errcheck // no-op once committed
+	defer tx.Rollback(d.Context)
 
 	if _, err := tx.Exec(d.Context,
 		"UPDATE claims SET status = $1, resolved_by = $2, resolved_at = NOW() WHERE id = $3",

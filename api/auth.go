@@ -14,10 +14,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// AuthUser authenticates a logged-in user from the "Authorization: Bearer
-// <session_token>" header minted on login (see routes/panel/callback.go).
-// Returns the authenticated user, or a ready-to-return HttpResponse
-// explaining why authentication failed.
 func AuthUser(ctx context.Context, r *http.Request) (*types.User, *uapi.HttpResponse) {
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if token == "" {
@@ -27,10 +23,12 @@ func AuthUser(ctx context.Context, r *http.Request) (*types.User, *uapi.HttpResp
 
 	var u types.User
 	err := state.Pool.QueryRow(ctx, `
-		SELECT u.id, da.discord_id, u.username, u.avatar, u.bio, u.is_staff, u.banned
-		FROM discord_accounts da JOIN users u ON u.id = da.user_id
-		WHERE da.session_token = $1 AND da.session_expires_at > NOW()`, token,
-	).Scan(&u.ID, &u.DiscordID, &u.Username, &u.Avatar, &u.Bio, &u.IsStaff, &u.Banned)
+		SELECT u.id, da.discord_id, u.username, u.avatar, u.bio, u.is_staff, u.banned, u.created_at
+		FROM sessions s
+		JOIN users u ON u.id = s.user_id
+		LEFT JOIN discord_accounts da ON da.user_id = u.id
+		WHERE s.token = $1 AND s.expires_at > NOW()`, token,
+	).Scan(&u.ID, &u.DiscordID, &u.Username, &u.Avatar, &u.Bio, &u.IsStaff, &u.Banned, &u.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		resp := helpers.ErrorResponse(http.StatusUnauthorized, "Invalid or expired session")
 		return nil, &resp
@@ -48,8 +46,6 @@ func AuthUser(ctx context.Context, r *http.Request) (*types.User, *uapi.HttpResp
 	return &u, nil
 }
 
-// AuthStaff is AuthUser plus a staff-membership check, for endpoints that
-// moderate bots/businesses/reviews (review actions, resolving reports/claims).
 func AuthStaff(ctx context.Context, r *http.Request) (*types.User, *uapi.HttpResponse) {
 	u, resp := AuthUser(ctx, r)
 	if resp != nil {
@@ -62,9 +58,6 @@ func AuthStaff(ctx context.Context, r *http.Request) (*types.User, *uapi.HttpRes
 	return u, nil
 }
 
-// AuthPermission is AuthUser plus a check that the user holds perm (see the
-// perms/roles packages), for panel endpoints gated more finely than plain
-// staff membership — managing roles, banning users, and similar.
 func AuthPermission(ctx context.Context, r *http.Request, perm string) (*types.User, *uapi.HttpResponse) {
 	u, resp := AuthUser(ctx, r)
 	if resp != nil {
@@ -86,10 +79,6 @@ func AuthPermission(ctx context.Context, r *http.Request, perm string) (*types.U
 	return u, nil
 }
 
-// isConfigOwner reports whether u is a config.yaml owner — always
-// permitted regardless of what roles/permissions (if any) they hold, same
-// as the bot-side checks in bot/commands/util.go and the panel access
-// check in routes/panel/access.go.
 func isConfigOwner(u *types.User) bool {
 	return u.DiscordID != nil && state.Config.IsOwner(*u.DiscordID)
 }

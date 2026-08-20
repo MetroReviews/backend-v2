@@ -1,9 +1,3 @@
-// Package projects exposes the /projects endpoints: portfolio/showcase
-// items a business posts, one business ID at a time — browsable off
-// /businesses/{business_id}/projects, individually addressable at
-// /projects/{id}. Handlers are split one concern per file; route
-// registration is split the same way, core CRUD here and review-queue
-// registration in routes_review.go — this file just wires the two together.
 package projects
 
 import (

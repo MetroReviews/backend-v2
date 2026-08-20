@@ -27,7 +27,7 @@ func respondToReview(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 		return *resp
 	}
 
-	_, businessID, botID, projectID, err := loadReviewSubject(d.Context, reviewID)
+	_, businessID, projectID, err := loadReviewSubject(d.Context, reviewID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return uapi.DefaultResponse(http.StatusNotFound)
 	}
@@ -36,12 +36,12 @@ func respondToReview(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 	}
 
 	if !user.IsStaff {
-		owns, err := ownsSubject(d.Context, user, businessID, botID, projectID)
+		owns, err := ownsSubject(d.Context, user, businessID, projectID)
 		if err != nil {
 			return helpers.InternalError(err)
 		}
 		if !owns {
-			return helpers.ErrorResponse(http.StatusForbidden, "You do not own the business/bot/project being reviewed")
+			return helpers.ErrorResponse(http.StatusForbidden, "You do not own the business/project being reviewed")
 		}
 	}
 
@@ -64,17 +64,13 @@ func respondToReview(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 		return helpers.InternalError(err)
 	}
 
-	targetType, targetID := reviewTarget(businessID, botID, projectID)
+	targetType, targetID := reviewTarget(businessID, projectID)
 	webhooks.Dispatch(targetType, targetID, webhooks.EventReviewResponded, updated)
 
 	return uapi.HttpResponse{Json: updated}
 }
 
-// ownsSubject checks review-reply permission — the same ownership rule
-// webhook registration uses (see the webhooks package's OwnsTarget), just
-// resolved from a review's three mutually-exclusive subject columns
-// instead of a target_type/target_id pair.
-func ownsSubject(ctx context.Context, user *types.User, businessID *uuid.UUID, botID *int64, projectID *uuid.UUID) (bool, error) {
-	targetType, targetID := reviewTarget(businessID, botID, projectID)
+func ownsSubject(ctx context.Context, user *types.User, businessID *uuid.UUID, projectID *uuid.UUID) (bool, error) {
+	targetType, targetID := reviewTarget(businessID, projectID)
 	return webhooks.OwnsTarget(ctx, user, targetType, targetID)
 }

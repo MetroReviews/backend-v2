@@ -1,6 +1,3 @@
-// Core CRUD route registration for /projects — GET/POST/PATCH, matching
-// get.go/post.go/update.go. Review-queue route registration lives in
-// routes_review.go, matching review.go.
 package projects
 
 import (

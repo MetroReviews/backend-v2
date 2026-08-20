@@ -48,8 +48,6 @@ func updateProject(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 		return hresp
 	}
 
-	// Column names below are all literal strings chosen by this code, never
-	// derived from request input, so building the SET clause with fmt is safe.
 	var setClauses []string
 	var args []any
 	hasUpdated := []string{}

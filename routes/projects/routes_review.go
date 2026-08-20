@@ -1,4 +1,3 @@
-// Review-queue route registration for /projects, matching review.go.
 package projects
 
 import (
@@ -11,9 +10,7 @@ import (
 )
 
 func registerReviewRoutes(r *chi.Mux) {
-	// The same claim -> approve/deny pipeline bots and businesses go
-	// through (see the review package), surfaced together with them in
-	// the Discord /queue command.
+
 	uapi.Route{
 		Method:  uapi.POST,
 		Pattern: "/projects/{id}/review/claim",

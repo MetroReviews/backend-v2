@@ -11,7 +11,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// buildBusinessDetailEmbed is buildBotDetailEmbed's counterpart for businesses.
 func buildBusinessDetailEmbed(businessID uuid.UUID) (*discordgo.MessageEmbed, types.State, error) {
 	var (
 		name, categorySlug                  string

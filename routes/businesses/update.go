@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/MetroReviews/backend-v2/api"
+	"github.com/MetroReviews/backend-v2/cache"
 	"github.com/MetroReviews/backend-v2/helpers"
 	"github.com/MetroReviews/backend-v2/state"
 	"github.com/MetroReviews/backend-v2/types"
@@ -42,8 +43,6 @@ func updateBusiness(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 		return hresp
 	}
 
-	// Column names below are all literal strings chosen by this code, never
-	// derived from request input, so building the SET clause with fmt is safe.
 	var setClauses []string
 	var args []any
 	hasUpdated := []string{}
@@ -81,6 +80,19 @@ func updateBusiness(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 	if update.Metadata != nil {
 		set("metadata", update.Metadata, "metadata")
 	}
+	if update.Latitude != nil {
+		set("latitude", *update.Latitude, "latitude")
+	}
+	if update.Longitude != nil {
+		set("longitude", *update.Longitude, "longitude")
+	}
+	if update.Gallery != nil {
+		gallery, ok := validateGallery(update.Gallery)
+		if !ok {
+			return helpers.ErrorResponse(http.StatusBadRequest, "gallery URLs must be https:// and at most 12 images")
+		}
+		set("gallery", gallery, "gallery")
+	}
 
 	if len(setClauses) == 0 {
 		return uapi.HttpResponse{Json: types.UpdatedResponse{HasUpdated: hasUpdated}}
@@ -89,10 +101,12 @@ func updateBusiness(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 	setClauses = append(setClauses, "updated_at = NOW()")
 
 	args = append(args, businessID)
-	query := fmt.Sprintf("UPDATE businesses SET %s WHERE id = $%d", strings.Join(setClauses, ", "), len(args))
-	if _, err := state.Pool.Exec(d.Context, query, args...); err != nil {
+	query := fmt.Sprintf("UPDATE businesses SET %s WHERE id = $%d RETURNING slug", strings.Join(setClauses, ", "), len(args))
+	var slug string
+	if err := state.Pool.QueryRow(d.Context, query, args...).Scan(&slug); err != nil {
 		return helpers.InternalError(err)
 	}
+	_ = cache.Del(d.Context, "biz:detail:"+slug)
 
 	return uapi.HttpResponse{Json: types.UpdatedResponse{HasUpdated: hasUpdated}}
 }

@@ -1,5 +1,3 @@
-// Membership assignment + Discord sync route registration, matching
-// members.go/sync.go. Catalog/CRUD registration lives in routes_catalog.go.
 package roles
 
 import (

@@ -12,9 +12,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// buildRolesListView renders the top-level /roles screen: every role plus
-// a picker to open one, and buttons to create a role or trigger a full
-// Discord sync.
 func buildRolesListView() (*discordgo.MessageEmbed, []discordgo.MessageComponent, error) {
 	list, err := roles.List(state.Context)
 	if err != nil {
@@ -67,8 +64,6 @@ func buildRolesListView() (*discordgo.MessageEmbed, []discordgo.MessageComponent
 	return embed, components, nil
 }
 
-// buildRoleDetailView renders one role's management screen: its current
-// state plus every action available on it.
 func buildRoleDetailView(roleID uuid.UUID) (*discordgo.MessageEmbed, []discordgo.MessageComponent, error) {
 	role, err := roles.Get(state.Context, roleID)
 	if err != nil {
@@ -116,12 +111,6 @@ func backButton(roleID string) discordgo.MessageComponent {
 	}}
 }
 
-// buildPermissionEditView renders the multi-select used to set a role's
-// permissions: every catalog entry plus a synthetic "everything" option for
-// the wildcard, pre-selected to whatever the role currently grants.
-// Discord's string select has no "toggle one option" affordance, so
-// selecting fires a full replace, not a diff — buildPermissionEditView's
-// embed says as much.
 func buildPermissionEditView(role *types.Role) (*discordgo.MessageEmbed, []discordgo.MessageComponent) {
 	embed := &discordgo.MessageEmbed{
 		Title:       "🔑 " + role.Name + " — Edit Permissions",
@@ -162,8 +151,6 @@ func buildPermissionEditView(role *types.Role) (*discordgo.MessageEmbed, []disco
 	return embed, components
 }
 
-// buildLinkRolePickerView renders the Discord role picker used to link (or
-// change) a role's synced Discord role.
 func buildLinkRolePickerView(role *types.Role) (*discordgo.MessageEmbed, []discordgo.MessageComponent) {
 	embed := &discordgo.MessageEmbed{
 		Title:       "🔑 " + role.Name + " — Link Discord Role",
@@ -184,13 +171,11 @@ func buildLinkRolePickerView(role *types.Role) (*discordgo.MessageEmbed, []disco
 	return embed, components
 }
 
-// buildDeleteConfirmView renders the "are you sure" step before a role is
-// deleted outright.
 func buildDeleteConfirmView(role *types.Role, memberCount int) (*discordgo.MessageEmbed, []discordgo.MessageComponent) {
 	embed := &discordgo.MessageEmbed{
 		Title:       "⚠️ Delete " + role.Name + "?",
 		Description: fmt.Sprintf("This permanently deletes the role and revokes it from %d member(s). This can't be undone.", memberCount),
-		Color:       0xed4245, // Discord's danger red
+		Color:       0xed4245,
 	}
 
 	components := []discordgo.MessageComponent{

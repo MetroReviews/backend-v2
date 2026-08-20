@@ -1,5 +1,3 @@
-// Package categories exposes GET /categories: the fixed list of business
-// categories browsable on Metro.
 package categories
 
 import (

@@ -36,7 +36,7 @@ func voteReview(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 	if err != nil {
 		return helpers.InternalError(err)
 	}
-	defer tx.Rollback(d.Context) //nolint:errcheck // no-op once committed
+	defer tx.Rollback(d.Context)
 
 	if _, err := tx.Exec(d.Context, `
 		INSERT INTO review_votes (review_id, user_id, helpful)
@@ -59,11 +59,8 @@ func voteReview(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 		return helpers.InternalError(err)
 	}
 
-	// Best-effort: the vote itself already succeeded above, so a failure
-	// resolving who to notify shouldn't turn into an error response for
-	// something that already happened.
-	if _, businessID, botID, projectID, err := loadReviewSubject(d.Context, reviewID); err == nil {
-		targetType, targetID := reviewTarget(businessID, botID, projectID)
+	if _, businessID, projectID, err := loadReviewSubject(d.Context, reviewID); err == nil {
+		targetType, targetID := reviewTarget(businessID, projectID)
 		webhooks.Dispatch(targetType, targetID, webhooks.EventReviewVoted, map[string]any{
 			"review_id": reviewID, "user_id": user.ID, "helpful": payload.Helpful,
 		})

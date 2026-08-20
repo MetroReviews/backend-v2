@@ -1,6 +1,3 @@
-// Voting/owner-response/reporting route registration, matching
-// vote.go/response.go/report.go. Core CRUD registration lives in
-// routes_core.go.
 package reviews
 
 import (
@@ -40,7 +37,7 @@ func registerModerationRoutes(r *chi.Mux) {
 		Docs: func() *docs.Doc {
 			return &docs.Doc{
 				Summary:     "Respond To Review",
-				Description: "Posts (or replaces) the owner's reply to a review. Requires the reviewed business/bot's verified owner or a staff session.",
+				Description: "Posts (or replaces) the owner's reply to a review. Requires the reviewed business/project's verified owner or a staff session.",
 				Req:         types.ReviewResponse{},
 				Resp:        types.Review{},
 				Params: []docs.Parameter{

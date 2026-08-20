@@ -10,8 +10,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// HandleComponent routes button/select-menu interactions produced by
-// /queue and /roles.
 func HandleComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	data := i.MessageComponentData()
 	parts := strings.Split(data.CustomID, ":")
@@ -40,9 +38,6 @@ func handleQueueComponent(s *discordgo.Session, i *discordgo.InteractionCreate, 
 	}
 }
 
-// handleQueueFilter handles picking a queue (bot/business/project) from
-// buildFilterSelect — rebuilds the message on page 0 of the chosen queue,
-// carrying the showAll flag through from the CustomID.
 func handleQueueFilter(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.MessageComponentInteractionData, parts []string) {
 	if len(parts) != 3 || len(data.Values) == 0 {
 		return
@@ -53,8 +48,6 @@ func handleQueueFilter(s *discordgo.Session, i *discordgo.InteractionCreate, dat
 		return
 	}
 
-	// Deferred *message update* edits the existing queue message in place
-	// (no new "thinking" bubble), while still respecting the 3s ack window.
 	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredMessageUpdate,
 	}); err != nil {
@@ -90,8 +83,6 @@ func handleQueuePage(s *discordgo.Session, i *discordgo.InteractionCreate, parts
 		page = 0
 	}
 
-	// Deferred *message update* edits the existing queue message in place
-	// (no new "thinking" bubble), while still respecting the 3s ack window.
 	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredMessageUpdate,
 	}); err != nil {
@@ -133,7 +124,7 @@ func handleQueueDetails(s *discordgo.Session, i *discordgo.InteractionCreate, da
 	embed, st, err := buildDetailEmbed(subjectType, id)
 	if err != nil {
 		content := "Could not load that item — it may have left the queue."
-		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content}) //nolint:errcheck
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
 		return
 	}
 
@@ -161,7 +152,5 @@ func handleQueueAction(s *discordgo.Session, i *discordgo.InteractionCreate, par
 		return
 	}
 
-	// Permission is enforced on submit (see HandleModal), matching the
-	// existing /claim /approve /deny slash commands.
 	openReviewModal(s, i, subjectType, types.Action(actionInt), id)
 }

@@ -1,6 +1,3 @@
-// Package panel serves internal endpoints used by the Metro Reviews panel
-// (Discord OAuth2 login + access checks). Handlers are split one concern
-// per file; this file only wires up routing and shared response shapes.
 package panel
 
 import (

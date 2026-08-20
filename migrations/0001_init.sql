@@ -1,16 +1,9 @@
--- Metro Reviews backend (Go rewrite) database schema
--- Postgres. Port of brc/tables.py (Piccolo ORM).
---
--- Enum values (stored as integers, matching the Python IntEnums):
---   Action:    CLAIM=0, UNCLAIM=1, APPROVE=2, DENY=3
---   State:     PENDING=0, UNDER_REVIEW=1, APPROVED=2, DENIED=3
---   ListState: PENDING_API_SUPPORT=0, SUPPORTED=1, DEFUNCT=2, BLACKLISTED=3, UNCONFIRMED_ENROLLMENT=4
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TABLE IF NOT EXISTS bot_list (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    state           INTEGER NOT NULL DEFAULT 0, -- ListState.PENDING_API_SUPPORT
+    state           INTEGER NOT NULL DEFAULT 0,
     name            TEXT NOT NULL,
     description     TEXT,
     icon            TEXT,
@@ -38,7 +31,7 @@ CREATE TABLE IF NOT EXISTS bot_queue (
     review_note      TEXT,
     invite           TEXT,
     added_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    state            INTEGER NOT NULL DEFAULT 0, -- State.PENDING
+    state            INTEGER NOT NULL DEFAULT 0,
     list_source      UUID NOT NULL REFERENCES bot_list (id) ON DELETE CASCADE ON UPDATE CASCADE,
     owner            BIGINT NOT NULL,
     extra_owners     BIGINT[] NOT NULL DEFAULT '{}',

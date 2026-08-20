@@ -14,9 +14,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// CreateRole creates a role on actor's behalf, enforcing roles.manage.
-// Errors from roles.Create (e.g. a duplicate name) are returned unwrapped
-// so callers can still check them with errors.As/isUniqueViolation.
 func CreateRole(ctx context.Context, actor Actor, name string, discordRoleID *int64, permissions []string) (*types.Role, error) {
 	if err := authorize(ctx, actor, perms.RolesManage); err != nil {
 		return nil, err
@@ -29,7 +26,6 @@ func CreateRole(ctx context.Context, actor Actor, name string, discordRoleID *in
 	return role, nil
 }
 
-// UpdateRole patches a role on actor's behalf, enforcing roles.manage.
 func UpdateRole(ctx context.Context, actor Actor, id uuid.UUID, name *string, discordRoleID *int64, unlinkDiscordRole bool, permissions []string) (*types.Role, error) {
 	if err := authorize(ctx, actor, perms.RolesManage); err != nil {
 		return nil, err
@@ -42,13 +38,11 @@ func UpdateRole(ctx context.Context, actor Actor, id uuid.UUID, name *string, di
 	return role, nil
 }
 
-// DeleteRole deletes a role on actor's behalf, enforcing roles.manage.
 func DeleteRole(ctx context.Context, actor Actor, id uuid.UUID) error {
 	if err := authorize(ctx, actor, perms.RolesManage); err != nil {
 		return err
 	}
-	// Look the role up first purely so the audit log can name it — a
-	// best-effort lookup, not required for the delete itself to succeed.
+
 	role, _ := roles.Get(ctx, id)
 	if err := roles.Delete(ctx, id); err != nil {
 		return err
@@ -61,8 +55,6 @@ func DeleteRole(ctx context.Context, actor Actor, id uuid.UUID) error {
 	return nil
 }
 
-// AssignRole grants roleID to userID on actor's behalf, enforcing
-// roles.manage.
 func AssignRole(ctx context.Context, actor Actor, userID, roleID uuid.UUID) error {
 	if err := authorize(ctx, actor, perms.RolesManage); err != nil {
 		return err
@@ -74,8 +66,6 @@ func AssignRole(ctx context.Context, actor Actor, userID, roleID uuid.UUID) erro
 	return nil
 }
 
-// UnassignRole revokes roleID from userID on actor's behalf, enforcing
-// roles.manage.
 func UnassignRole(ctx context.Context, actor Actor, userID, roleID uuid.UUID) error {
 	if err := authorize(ctx, actor, perms.RolesManage); err != nil {
 		return err
@@ -87,10 +77,6 @@ func UnassignRole(ctx context.Context, actor Actor, userID, roleID uuid.UUID) er
 	return nil
 }
 
-// SyncGuildRoles re-syncs every Discord-linked role's assignments on
-// actor's behalf, enforcing roles.manage. Returns ErrDiscordUnavailable
-// if the bot isn't connected — the same precondition regardless of
-// whether the sync was triggered over HTTP or from Discord itself.
 func SyncGuildRoles(ctx context.Context, actor Actor) error {
 	if err := authorize(ctx, actor, perms.RolesManage); err != nil {
 		return err
@@ -101,10 +87,6 @@ func SyncGuildRoles(ctx context.Context, actor Actor) error {
 	return roles.SyncGuild(ctx, state.Discord, state.Config.GuildID())
 }
 
-// announceRoleChange posts a short record of a role CRUD/assignment
-// change to the configured logs channel — a no-op if Discord isn't
-// connected or no logs channel is configured, same guard
-// roles.postRoleSyncLog uses for the sync-specific log it already sends.
 func announceRoleChange(actor Actor, action, detail string) {
 	if state.Discord == nil || state.Config.LogsChannelID() == 0 {
 		return

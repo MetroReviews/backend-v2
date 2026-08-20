@@ -1,9 +1,3 @@
-// Package team exposes GET /team: the review team, sourced from the
-// roles/user_roles tables (see the roles/perms packages) rather than a
-// live Discord guild lookup. Those tables are already kept in sync with
-// Discord role membership by roles.SyncMember/SyncGuild, so reading them
-// directly here means /team works without hitting the Discord API (or
-// even needing the bot connected) on every request.
 package team
 
 import (
@@ -47,8 +41,6 @@ func (Router) Routes(r *chi.Mux) {
 	}.Route(r)
 }
 
-// memberRoles accumulates one user's held role names and effective
-// permission set while scanning ourTeam's query, one row per role held.
 type memberRoles struct {
 	discordID   *int64
 	username    *string
@@ -101,10 +93,7 @@ func ourTeam(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 		if !perms.Has(m.permissions, perms.QueueReview) {
 			continue
 		}
-		// TeamMember is inherently Discord-shaped (ID/Avatar are used to
-		// @mention and show the member) — nothing sensible to show for an
-		// account with no linked Discord, so skip it rather than return a
-		// broken-looking entry.
+
 		if m.discordID == nil {
 			continue
 		}
@@ -130,9 +119,7 @@ func ourTeam(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 		if m.avatar != nil {
 			avatarHash = *m.avatar
 		}
-		// AvatarURL is pure string-building (no network call) — safe to
-		// call on a struct built from our own DB columns instead of a
-		// live discordgo.User fetched from the API.
+
 		discordUser := &discordgo.User{ID: discordIDStr, Username: username, Discriminator: "0", Avatar: avatarHash}
 
 		team = append(team, types.TeamMember{

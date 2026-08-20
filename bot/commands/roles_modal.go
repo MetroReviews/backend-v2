@@ -57,10 +57,6 @@ func openRoleRenameModal(s *discordgo.Session, i *discordgo.InteractionCreate, r
 	}
 }
 
-// handleRoleModal handles the create/rename modal submissions opened
-// above, editing the /roles message the triggering button lived on in
-// place — the same "one message, redrawn in place" flow every other
-// /roles transition uses.
 func handleRoleModal(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ModalSubmitInteractionData) {
 	if !isRoleManager(i) {
 		respondText(s, i, "You don't have permission to manage roles.", true)

@@ -19,7 +19,7 @@ func queueFilterLabel(showAll bool) string {
 func buildQueueEmbed(entries []queueEntry, filter string, showAll bool, page, totalPages int) *discordgo.MessageEmbed {
 	embed := &discordgo.MessageEmbed{
 		Title: fmt.Sprintf("%s Review Queue — %s", subjectEmoji[filter], subjectPlural[filter]),
-		Color: 0x5865f2, // blurple
+		Color: 0x5865f2,
 		Footer: &discordgo.MessageEmbedFooter{
 			Text: fmt.Sprintf("Page %d/%d • %d item(s) shown • %s", page+1, totalPages, len(entries), queueFilterLabel(showAll)),
 		},
@@ -32,7 +32,7 @@ func buildQueueEmbed(entries []queueEntry, filter string, showAll bool, page, to
 
 	for _, e := range entries {
 		if e.state == types.StatePending {
-			embed.Color = 0xf1c40f // gold: something needs claiming
+			embed.Color = 0xf1c40f
 			break
 		}
 	}
@@ -48,9 +48,6 @@ func buildQueueEmbed(entries []queueEntry, filter string, showAll bool, page, to
 	return embed
 }
 
-// reviewButtonsFor returns the action buttons for an entry's current state
-// (empty for states that have nothing left to do), shown on its detail
-// panel after it's picked from the "select an item" menu.
 func reviewButtonsFor(subjectType, id string, st types.State) []discordgo.MessageComponent {
 	customID := func(action types.Action) string { return fmt.Sprintf("queue:act:%s:%d:%s", subjectType, action, id) }
 
@@ -74,10 +71,6 @@ func reviewButtonsFor(subjectType, id string, st types.State) []discordgo.Messag
 	}
 }
 
-// buildFilterSelect builds the "which queue" menu that switches /queue
-// between bots, businesses and projects — showAll rides along in its
-// CustomID so switching queues doesn't reset that choice, the same way
-// the pagination buttons carry the current filter.
 func buildFilterSelect(filter string, showAll bool) discordgo.SelectMenu {
 	showAllFlag := "0"
 	if showAll {
@@ -101,10 +94,6 @@ func buildFilterSelect(filter string, showAll bool) discordgo.SelectMenu {
 	}
 }
 
-// buildDetailsSelect builds the "select an item" menu, scoped to whatever
-// page is currently on screen (always well under Discord's 25-option cap
-// given queuePageSize). Picking an option opens that item's detail panel
-// with its Claim/Approve/Deny/Unclaim buttons attached.
 func buildDetailsSelect(pageEntries []queueEntry) discordgo.SelectMenu {
 	opts := make([]discordgo.SelectMenuOption, 0, len(pageEntries))
 	for _, e := range pageEntries {
@@ -122,9 +111,6 @@ func buildDetailsSelect(pageEntries []queueEntry) discordgo.SelectMenu {
 	}
 }
 
-// buildQueueComponents lays out the filter and select-an-item menus plus
-// pagination — per-entry actions live on the detail panel opened from the
-// select menu, not inline in the list.
 func buildQueueComponents(entries []queueEntry, filter string, showAll bool, page, totalPages int) []discordgo.MessageComponent {
 	comps := []discordgo.MessageComponent{
 		discordgo.ActionsRow{Components: []discordgo.MessageComponent{buildFilterSelect(filter, showAll)}},

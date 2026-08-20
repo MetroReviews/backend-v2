@@ -1,11 +1,3 @@
-// Package migrations embeds the SQL schema history and applies whatever a
-// given database is missing. Files are named NNNN_description.sql; each one
-// is a single forward-only step, applied at most once and in order.
-//
-// Adding a change: drop a new NNNN_description.sql file in this directory
-// with the next number. Don't edit a migration that has already shipped —
-// once it may have run against a real database, only a new file can change
-// its outcome there.
 package migrations
 
 import (
@@ -29,15 +21,8 @@ type migration struct {
 	sql     string
 }
 
-// migrationLockKey is an arbitrary, fixed advisory-lock key scoping the lock
-// to "applying this app's migrations" so two instances starting at once
-// don't race to apply the same migration twice.
 const migrationLockKey = 727_363_001
 
-// Apply brings the database up to date with every embedded migration that
-// hasn't been recorded as applied yet, in order, each in its own
-// transaction. It holds a Postgres advisory lock for the duration, so it's
-// safe to call from every replica on startup.
 func Apply(ctx context.Context, pool *pgxpool.Pool) error {
 	migs, err := load()
 	if err != nil {
@@ -53,7 +38,7 @@ func Apply(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock($1)", migrationLockKey); err != nil {
 		return fmt.Errorf("acquire migration lock: %w", err)
 	}
-	defer conn.Exec(ctx, "SELECT pg_advisory_unlock($1)", migrationLockKey) //nolint:errcheck
+	defer conn.Exec(ctx, "SELECT pg_advisory_unlock($1)", migrationLockKey)
 
 	if _, err := conn.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -93,13 +78,13 @@ func Apply(ctx context.Context, pool *pgxpool.Pool) error {
 		}
 
 		if _, err := tx.Exec(ctx, m.sql); err != nil {
-			tx.Rollback(ctx) //nolint:errcheck
+			tx.Rollback(ctx)
 			return fmt.Errorf("apply migration %04d_%s: %w", m.version, m.name, err)
 		}
 		if _, err := tx.Exec(ctx,
 			"INSERT INTO schema_migrations (version, name) VALUES ($1, $2)", m.version, m.name,
 		); err != nil {
-			tx.Rollback(ctx) //nolint:errcheck
+			tx.Rollback(ctx)
 			return fmt.Errorf("record migration %04d_%s: %w", m.version, m.name, err)
 		}
 		if err := tx.Commit(ctx); err != nil {
@@ -110,9 +95,6 @@ func Apply(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
-// load reads every embedded *.sql file, parses its NNNN_name.sql filename
-// and returns them sorted by version, erroring out on a malformed or
-// duplicate version rather than silently skipping it.
 func load() ([]migration, error) {
 	entries, err := fs.ReadDir(files, ".")
 	if err != nil {

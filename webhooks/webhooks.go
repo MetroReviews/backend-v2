@@ -1,9 +1,3 @@
-// Package webhooks lets any reviewable subject — a bot, a business, a
-// project, or whatever gets added next — have outbound event
-// subscriptions registered against it (see Webhook.TargetType/TargetID,
-// the same polymorphic shape Report/ModerationAction already use). Create
-// a webhook, and Dispatch (called from the review queue and the reviews
-// routes) delivers matching events to it as a signed HTTP POST.
 package webhooks
 
 import (
@@ -31,7 +25,6 @@ func scanWebhook(row pgx.Row) (*types.Webhook, error) {
 	return &w, nil
 }
 
-// List returns every webhook registered against one target.
 func List(ctx context.Context, targetType, targetID string) ([]types.Webhook, error) {
 	rows, err := state.Pool.Query(ctx,
 		"SELECT "+webhookColumns+" FROM webhooks WHERE target_type = $1 AND target_id = $2 ORDER BY created_at", targetType, targetID)
@@ -41,13 +34,10 @@ func List(ctx context.Context, targetType, targetID string) ([]types.Webhook, er
 	return pgx.CollectRows(rows, pgx.RowToStructByName[types.Webhook])
 }
 
-// Get returns a single webhook by ID.
 func Get(ctx context.Context, id uuid.UUID) (*types.Webhook, error) {
 	return scanWebhook(state.Pool.QueryRow(ctx, "SELECT "+webhookColumns+" FROM webhooks WHERE id = $1", id))
 }
 
-// Create registers a new webhook, generating its signing secret. events
-// nil/empty means "every event".
 func Create(ctx context.Context, targetType, targetID, url string, events []string, createdBy uuid.UUID) (*types.Webhook, error) {
 	if events == nil {
 		events = []string{}
@@ -61,9 +51,6 @@ func Create(ctx context.Context, targetType, targetID, url string, events []stri
 	))
 }
 
-// Update patches a webhook. url and enabled are left unchanged when nil;
-// events replaces the existing subscription list whenever non-nil
-// (including an explicit empty list, meaning "every event").
 func Update(ctx context.Context, id uuid.UUID, url *string, events []string, enabled *bool) (*types.Webhook, error) {
 	var setClauses []string
 	var args []any
@@ -94,14 +81,11 @@ func Update(ctx context.Context, id uuid.UUID, url *string, events []string, ena
 	return scanWebhook(state.Pool.QueryRow(ctx, query, args...))
 }
 
-// Delete removes a webhook outright.
 func Delete(ctx context.Context, id uuid.UUID) error {
 	_, err := state.Pool.Exec(ctx, "DELETE FROM webhooks WHERE id = $1", id)
 	return err
 }
 
-// RotateSecret replaces a webhook's signing secret, invalidating the old
-// one immediately.
 func RotateSecret(ctx context.Context, id uuid.UUID) (*types.Webhook, error) {
 	return scanWebhook(state.Pool.QueryRow(ctx, `
 		UPDATE webhooks SET secret = $1, updated_at = NOW() WHERE id = $2
