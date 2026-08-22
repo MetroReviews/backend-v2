@@ -50,7 +50,7 @@ type BusinessSearchResult struct {
 
 type BusinessCreate struct {
 	CategoryID  uuid.UUID      `json:"category_id" validate:"required" msg:"A category is required" description:"The business's category ID"`
-	Slug        string         `json:"slug" validate:"required" msg:"A URL slug is required" description:"The business's URL slug"`
+	Slug        string         `json:"slug" description:"Optional URL slug; generated from the name if omitted"`
 	Name        string         `json:"name" validate:"required" msg:"A name is required" description:"The business's name"`
 	Description *string        `json:"description" description:"The business's description"`
 	Website     *string        `json:"website" description:"The business's website URL"`

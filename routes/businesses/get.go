@@ -30,7 +30,10 @@ func getBusiness(d uapi.RouteData, r *http.Request) uapi.HttpResponse {
 		return uapi.HttpResponse{Json: cached}
 	}
 
-	rows, err := state.Pool.Query(d.Context, "SELECT "+businessColumns+" FROM businesses WHERE slug = $1", slug)
+	// Resolve by slug, falling back to the id — so a business is reachable
+	// even if its slug is empty (legacy rows) and the client can link by id.
+	rows, err := state.Pool.Query(d.Context,
+		"SELECT "+businessColumns+" FROM businesses WHERE slug = $1 OR id::text = $1 LIMIT 1", slug)
 	if err != nil {
 		return helpers.InternalError(err)
 	}
